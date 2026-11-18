@@ -32,6 +32,7 @@ good-looking replay does not change that.
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/timemachine.py" run                    # trader/plan.json, 10,000 replays, seed 19
 python3 "${CLAUDE_SKILL_DIR}/timemachine.py" run --write            # also save trader/timemachine.json
+python3 "${CLAUDE_SKILL_DIR}/timemachine.py" run --market IN --write # Indian session (75 bars, IST)
 python3 "${CLAUDE_SKILL_DIR}/timemachine.py" run --until 15:55      # end each replay at your flat-by time
 python3 "${CLAUDE_SKILL_DIR}/timemachine.py" run --json
 python3 "${CLAUDE_SKILL_DIR}/timemachine.py" run --symbol TSLA --date 2026-10-19 \
@@ -39,9 +40,9 @@ python3 "${CLAUDE_SKILL_DIR}/timemachine.py" run --symbol TSLA --date 2026-10-19
 python3 "${CLAUDE_SKILL_DIR}/timemachine.py" chart --from           # ASCII fan chart of the saved run
 ```
 
-Other flags: `--replays N`, `--seed N` (default 19), `--window N` (default 2
+Other flags: `--market US|IN` (default US), `--replays N`, `--seed N` (default 19), `--window N` (default 2
 bars), `--offline FILE` (a saved Yahoo chart JSON, `.json` or `.json.gz`),
-`--now "2026-10-19 10:15"` (New York time) to pin the clock.
+`--now "2026-10-19 10:15"` (New York or IST time) to pin the clock.
 
 ## What it reads and writes
 

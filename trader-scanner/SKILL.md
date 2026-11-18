@@ -33,11 +33,16 @@ python3 "${CLAUDE_SKILL_DIR}/scan.py" daily --symbols TSLA,NVDA,AMD  # or --watc
 python3 "${CLAUDE_SKILL_DIR}/scan.py" orb                            # after 9:50 AM ET -> trader/watchlist.json
 python3 "${CLAUDE_SKILL_DIR}/scan.py" orb --at 10:15                 # cut the clock at 10:15 AM ET
 python3 "${CLAUDE_SKILL_DIR}/scan.py" orb --watchlist trader/watchlist.json --json
+
+# Indian market (NSE & BSE):
+python3 "${CLAUDE_SKILL_DIR}/scan.py" universe --market IN           # NIFTY 500 universe (EQUITY_L.csv)
+python3 "${CLAUDE_SKILL_DIR}/scan.py" orb --market IN --at 10:15     # 75-bar Indian session (IST)
 ```
 
-Flags: `--min-price 5` and `--min-volume` (daily 1,000,000, orb 0),
+Flags: `--market US|IN` (default US), `--index NIFTY500` (for IN),
+`--min-price 5` and `--min-volume` (daily 1,000,000, orb 0),
 `--or-minutes 15`, `--max-confirm 200` (orb stage 2),
-`--now "2026-10-19 10:15"` (New York time) to pin the clock, `--offline PATH`
+`--now "2026-10-19 10:15"` (New York or IST time) to pin the clock, `--offline PATH`
 to read saved Yahoo files, `--no-write`, `--show N`, `--json`. Exit code 0
 when the scan found something, 1 when it found nothing or could not run (the
 reason is one plain line).

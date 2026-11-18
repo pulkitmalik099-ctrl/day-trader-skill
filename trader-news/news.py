@@ -52,7 +52,17 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 
+_COMMON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "trader-common")
+if _COMMON_DIR not in sys.path:
+    sys.path.insert(0, _COMMON_DIR)
+try:
+    import market as mkt
+except ImportError:
+    mkt = None
+
 YAHOO = "https://feeds.finance.yahoo.com/rss/2.0/headline?s=%s&region=US&lang=en-US"
+MONEYCONTROL_BUZZING = "https://www.moneycontrol.com/rss/buzzingstocks.xml"
+MONEYCONTROL_MARKET = "https://www.moneycontrol.com/rss/latestnews.xml"
 CHART = "https://%s.finance.yahoo.com/v8/finance/chart/%s?range=1d&interval=5m"
 SEC_FEED = ("https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=%s&type=%s"
             "&dateb=&owner=include&count=%d&output=atom")
@@ -85,6 +95,19 @@ KEYWORDS = [
     ("halt", r"\bhalt(?:s|ed)?\b|\btrading (?:pause|suspen)"),
     ("regulatory", r"\bFDA\b|\bapproval\b|\bapproves\b|\bclinical\b|\bFTC\b|\bDOJ\b"),
     ("macro", r"\bFed\b|\bFOMC\b|\bCPI\b|\binflation\b|\bjobs report\b|\bpayrolls\b|\btariffs?\b|\bfutures\b"),
+]
+KEYWORDS_IN = [
+    ("earnings", r"\bearnings\b|\bresults\b|\bEPS\b|\bguidance\b|\bquarterly\b"),
+    ("sebi", r"\bSEBI\b|\bregulat"),
+    ("rbi", r"\bRBI\b|\brepo rate\b|\bmonetary policy\b|\binflation\b"),
+    ("fii_dii", r"\bFII\b|\bDII\b|\bforeign\s+institutional\b|\bdomestic\s+institutional\b"),
+    ("promoter", r"\bpromoter\b|\binsider\b|\bpledge\b|\bstake\b"),
+    ("deal", r"\bacqui|\bmerger\b|\bbuyout\b|\btakeover\b|\bdeal\b"),
+    ("capital", r"\bdividend\b|\bbuyback\b|\bbonus\b|\bsplit\b|\brights issue\b"),
+    ("ipo", r"\bIPO\b|\bOFS\b|\bFPO\b|\blisting\b"),
+    ("risk", r"\brecall\b|\bdefault\b|\bfraud\b|\bbreach\b|\bcircuit\b"),
+    ("nifty", r"\bNIFTY\b|\bSENSEX\b|\bBANK\s*NIFTY\b"),
+    ("mutual_fund", r"\bmutual fund\b|\bSIP\b|\bNAV\b"),
 ]
 
 
@@ -191,8 +214,13 @@ class Fetcher(object):
             raise NewsError("could not reach %s: %s" % (url, exc.reason))
 
 
-def yahoo_symbol(ticker):
-    return ticker.upper().replace(".", "-")
+def yahoo_symbol(ticker, market="US"):
+    if mkt:
+        return mkt.to_yahoo(ticker, market)
+    s = ticker.upper()
+    if market.upper() in ("IN", "INDIA", "NSE", "BSE"):
+        return s if s.endswith((".NS", ".BO")) else (s + ".NS")
+    return s.replace(".", "-")
 
 
 def cik_map(fetcher, state):
@@ -305,18 +333,19 @@ def parse_chart(data, ticker):
             "time": _dt.datetime.fromtimestamp(when, _dt.timezone.utc) if when else None}
 
 
-def collect_moves(fetcher, watch, errors=None):
+def collect_moves(fetcher, watch, errors=None, market="US"):
     errors = [] if errors is None else errors
     out = []
     for t in sorted(watch):
         name = "chart-%s.json" % t
         try:
+            sym_url = yahoo_symbol(t, market)
             try:
-                data = fetcher.get(CHART % ("query2", yahoo_symbol(t)), name)
+                data = fetcher.get(CHART % ("query2", sym_url), name)
             except NewsError as exc:
                 if fetcher.offline or not re.search(r"HTTP (429|5\d\d)", str(exc)):
                     raise
-                data = fetcher.get(CHART % ("query1", yahoo_symbol(t)), name)
+                data = fetcher.get(CHART % ("query1", sym_url), name)
             out.append(parse_chart(data, t))
         except NewsError as exc:
             if not (fetcher.offline and "no file" in str(exc)):
@@ -328,16 +357,17 @@ def mention_patterns(watch):
     pats = {}
     for t, name in watch.items():
         alts = [r"\(%s\)" % re.escape(t), r"\$%s\b" % re.escape(t),
-                r"\b(?:NYSE|NASDAQ|Nasdaq)\s*:\s*%s\b" % re.escape(t)]
+                r"\b(?:NYSE|NASDAQ|Nasdaq|NSE|BSE)\s*:\s*%s\b" % re.escape(t)]
         if name and len(name) >= 4:
             alts.append(r"\b%s\b" % re.escape(name).replace(r"\ ", r"[\s-]"))
         pats[t] = re.compile("|".join(alts))
     return pats
 
 
-def tag(items, watch):
+def tag(items, watch, market="US"):
     """Which of your tickers each item touches, and why it matters."""
     pats = mention_patterns(watch)
+    kw = KEYWORDS_IN if market.upper() in ("IN", "INDIA", "NSE", "BSE") else KEYWORDS
     for it in items:
         hay = "%s %s" % (it["title"], it.get("summary") or "")
         touches = {it["ticker"]} if it["ticker"] in watch else set()
@@ -345,7 +375,7 @@ def tag(items, watch):
             if rx.search(hay):
                 touches.add(t)
         it["touches"] = sorted(touches)
-        it["tags"] = [label for label, rx in KEYWORDS if re.search(rx, hay, re.I)]
+        it["tags"] = [label for label, rx in kw if re.search(rx, hay, re.I)]
         if it["kind"] == "filing" and "2.02" in it.get("items", []) and "earnings" not in it["tags"]:
             it["tags"].insert(0, "earnings")
     return items
@@ -378,15 +408,15 @@ def fingerprint(it):
 
 # ---------------------------------------------------------------- the check
 
-def collect(fetcher, watch, state, sec=True, forms=("8-K",), count=10, errors=None):
+def collect(fetcher, watch, state, sec=True, forms=("8-K",), count=10, errors=None, market="US"):
     errors = [] if errors is None else errors
     items = []
     for t in sorted(watch):
         try:
-            items += parse_rss(fetcher.get(YAHOO % yahoo_symbol(t), "yahoo-%s.xml" % t), t)
+            items += parse_rss(fetcher.get(YAHOO % yahoo_symbol(t, market), "yahoo-%s.xml" % t), t)
         except NewsError as exc:
             errors.append("headlines for %s: %s" % (t, exc))
-    if sec:
+    if sec and market.upper() not in ("IN", "INDIA", "NSE", "BSE"):
         try:
             ciks = cik_map(fetcher, state)
         except NewsError as exc:
@@ -435,25 +465,29 @@ def remember(items, state, now):
     state["last_check"] = stamp
 
 
-def render_moves(moves, move_pct=MOVE_PCT):
+def render_moves(moves, move_pct=MOVE_PCT, market="US"):
     out = []
+    tz = mkt.tz_name(market) if mkt else "ET"
     for m in moves:
         flag = "MOVING" if abs(m["pct"]) >= move_pct else ""
-        when = (" at %s ET" % to_eastern(m["time"]).strftime("%H:%M")) if m.get("time") else ""
+        when_dt = mkt.to_market_tz(m["time"], market) if mkt else to_eastern(m["time"])
+        when = (" at %s %s" % (when_dt.strftime("%H:%M"), tz)) if m.get("time") else ""
         out.append("%-6s %s %+.2f%% vs yesterday's close %s%s  %s" % (
             m["ticker"], "{:,.2f}".format(m["price"]), m["pct"], "{:,.2f}".format(m["prev_close"]),
             when, flag))
     return out
 
 
-def render(items, errors, now, moves=None, move_pct=MOVE_PCT):
-    out = render_moves(moves or [], move_pct)
+def render(items, errors, now, moves=None, move_pct=MOVE_PCT, market="US"):
+    out = render_moves(moves or [], move_pct, market)
     if out:
         out.append("")
     if not items:
         out.append("Nothing new.")
+    tz = mkt.tz_name(market) if mkt else "ET"
     for it in items:
-        when = to_eastern(it["time"]).strftime("%Y-%m-%d %H:%M ET") if it["time"] else "time unknown"
+        when_dt = mkt.to_market_tz(it["time"], market) if mkt else to_eastern(it["time"])
+        when = when_dt.strftime("%Y-%m-%d %H:%M " + tz) if it["time"] else "time unknown"
         mark = "!" if it.get("important") else " "
         who = ",".join(it["touches"]) or it["ticker"]
         out.append("%s %s  %-11s %-13s %s" % (mark, when, who, it["source"], it["title"]))
@@ -464,8 +498,9 @@ def render(items, errors, now, moves=None, move_pct=MOVE_PCT):
         out.append("      " + "  ".join(extra))
     for e in errors:
         out.append("note: %s" % e)
+    now_dt = mkt.to_market_tz(now, market) if mkt else to_eastern(now)
     out.append("Checked %s. Headlines are leads, not facts; open the story before acting. "
-               "Not financial advice." % to_eastern(now).strftime("%Y-%m-%d %H:%M ET"))
+               "Not financial advice." % now_dt.strftime("%Y-%m-%d %H:%M " + tz))
     return "\n".join(out) + "\n"
 
 
@@ -495,9 +530,13 @@ def main(argv=None):
     ap.add_argument("--config", default="trader/config.json")
     ap.add_argument("--offline", metavar="DIR")
     ap.add_argument("--now", help="ISO time, for reproducible runs")
+    ap.add_argument("--market", choices=["US", "IN", "NSE", "BSE"], help="market mode (default: config or US)")
     ap.add_argument("--dry-run", action="store_true", help="do not update the state file")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
+
+    cfg = load_json(args.config) or {}
+    market = (args.market or cfg.get("market") or "US").upper()
 
     if args.tickers:
         watch = {t.upper(): None for t in args.tickers}
@@ -513,24 +552,24 @@ def main(argv=None):
     state = load_json(args.state) or {}
     errors = []
     ua = sec_user_agent(args.user_agent, args.config)
-    sec = not args.no_sec
+    sec = not args.no_sec and market not in ("IN", "INDIA", "NSE", "BSE")
     if sec and not ua and not args.offline:
         errors.append("SEC filings skipped: set sec_user_agent in trader/config.json or "
                       "SEC_USER_AGENT (\"Your Name you@example.com\") to include them")
         sec = False
     fetcher = Fetcher(ua, offline=args.offline)
     forms = [f.strip().upper() for f in args.forms.split(",") if f.strip()]
-    items = collect(fetcher, watch, state, sec=sec, forms=forms, errors=errors)
-    items = dedupe(tag(items, watch))
+    items = collect(fetcher, watch, state, sec=sec, forms=forms, errors=errors, market=market)
+    items = dedupe(tag(items, watch, market=market))
     shown = select(items, state, now, hours=args.hours, show_all=args.all)
-    moves = [] if args.no_moves else collect_moves(fetcher, watch, errors)
+    moves = [] if args.no_moves else collect_moves(fetcher, watch, errors, market=market)
     if args.json:
         mv = [dict(m, time=m["time"].isoformat() if m.get("time") else None,
                    moving=abs(m["pct"]) >= args.move_pct) for m in moves]
-        print(json.dumps({"checked": now.isoformat(), "moves": mv, "items": _json_ready(shown),
+        print(json.dumps({"checked": now.isoformat(), "market": market, "moves": mv, "items": _json_ready(shown),
                           "notes": errors}, indent=2))
     else:
-        sys.stdout.write(render(shown, errors, now, moves, args.move_pct))
+        sys.stdout.write(render(shown, errors, now, moves, args.move_pct, market=market))
     if not args.dry_run:
         remember(items, state, now)
         folder = os.path.dirname(args.state)

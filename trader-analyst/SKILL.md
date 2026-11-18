@@ -26,6 +26,7 @@ Tool in this folder (standard library Python, no keys):
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/facts.py" --help
+python3 "${CLAUDE_SKILL_DIR}/facts.py" INFY.NS                   # maps to US ADR (INFY) for SEC facts
 ```
 
 It needs the SEC User-Agent (`sec_user_agent` in `trader/config.json`, or

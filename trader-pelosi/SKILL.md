@@ -31,6 +31,11 @@ optional, to read the PDFs locally):
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/ptr.py" --help
+
+# Indian market insider trading (SEBI PIT Reg 7(2)) and bulk/block deals:
+python3 "${CLAUDE_SKILL_DIR}/insider.py" disclosures                 # SEBI PIT insider transactions
+python3 "${CLAUDE_SKILL_DIR}/insider.py" bulk                       # NSE/BSE bulk & block deals
+python3 "${CLAUDE_SKILL_DIR}/insider.py" disclosures --symbol RELIANCE.NS
 ```
 
 ## What it reads and writes

@@ -152,6 +152,32 @@ for the 60 days to October 19 2026, the 10:15 AM opening-range scan, Yahoo's
 TSLA headlines that morning, the House Clerk's 2026 index, real PTR text and
 real XBRL facts. They reproduce every number in the example above.
 
+## Indian stock market (NSE & BSE)
+
+All 11 skills support the Indian market out of the box using `--market IN` with zero third-party dependencies:
+
+- **Trading hours**: 9:15 AM to 3:30 PM IST (fixed UTC+5:30, no DST), with 75 five-minute bars per regular session. Entry window: 9:30 AM to 3:15 PM IST. Default intraday flatten time: 3:25 PM IST.
+- **Tickers**: Full support for `.NS` (National Stock Exchange) and `.BO` (Bombay Stock Exchange) suffixes, as well as compound symbols with hyphens or ampersands (e.g. `M&M.NS`, `BAJAJ-AUTO.NS`, `RELIANCE.NS`, `TCS.NS`).
+- **Universe**: Download and scan the NIFTY 500 index universe via `EQUITY_L.csv` (`python3 trader-scanner/scan.py universe --market IN`).
+- **Currency & Budget**: Sizing in Indian Rupees (INR / `₹`) using `trader-budget/config.example.india.json` (`max_loss_per_trade_inr`, `max_daily_loss_inr`, `max_order_inr`, and `min_order_inr`).
+- **Circuit filters**: `trader-risk` detects exchange circuit breaker bands (5 %, 10 %, 20 %) and flags limit warnings before orders are approved.
+- **SEBI insider & bulk deals**: `trader-pelosi/insider.py` tracks SEBI Prohibition of Insider Trading (PIT) Regulation 7(2) disclosures and NSE/BSE bulk and block deals.
+- **Broker tickets**: Plain-English order tickets for Indian brokers (Zerodha Kite Connect paper / live mode) formatted in `₹`.
+
+```bash
+# Indian market quick start:
+python3 trader-scanner/scan.py universe --market IN                     # NIFTY 500 universe
+python3 trader-scanner/scan.py orb --market IN --at 10:15               # morning ORB scan
+python3 trader-entry/entry.py check RELIANCE.NS --market IN             # 9:15 AM open
+python3 trader-exit/exit.py plan --market IN --write                    # 15:25 IST flat by
+python3 trader-timemachine/timemachine.py run --market IN --write       # 75-bar session replay
+python3 trader-budget/size.py --market IN --write                       # INR position sizing
+python3 trader-risk/check.py --market IN                                # IST hours & circuit checks
+python3 trader-broker/ticket.py show --market IN                        # ₹ tickets
+python3 trader-alerts/alerts.py clock --market IN                       # NSE market clock
+python3 trader-pelosi/insider.py disclosures                            # SEBI PIT insider tracker
+```
+
 ## Fine print
 
 **Not financial advice.** This is software that reads public data and does

@@ -30,9 +30,10 @@ keep each loss and each day's losses small. They do not make a trade win.
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/check.py"                           # trader/ files; writes trader/state/risk.json
+python3 "${CLAUDE_SKILL_DIR}/check.py" --market IN               # Indian market rules (IST, circuit filters)
 python3 "${CLAUDE_SKILL_DIR}/check.py" --json
 python3 "${CLAUDE_SKILL_DIR}/check.py" --no-write                # look without recording
-python3 "${CLAUDE_SKILL_DIR}/check.py" --now "2026-10-19 10:15"  # pin the clock (New York time)
+python3 "${CLAUDE_SKILL_DIR}/check.py" --now "2026-10-19 10:15"  # pin the clock (New York or IST time)
 ```
 
 ## What it reads and writes

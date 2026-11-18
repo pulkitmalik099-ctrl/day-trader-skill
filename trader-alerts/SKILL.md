@@ -28,6 +28,7 @@ user what happened and when it is time to be flat.
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" clock                          # NYSE open or closed, next open
+python3 "${CLAUDE_SKILL_DIR}/alerts.py" clock --market IN              # NSE open or closed (09:15-15:30 IST)
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --from-plan                # stop, target, flat by close from trader/plan.json
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --opening-bell
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --symbol TSLA --stop 358.32
@@ -41,8 +42,8 @@ python3 "${CLAUDE_SKILL_DIR}/alerts.py" list
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" reset tsla-plan-stop
 ```
 
-`--now "2026-10-19 15:55"` pins the clock (New York time); `--offline DIR`
-reads saved quote files instead of the network.
+`--now "2026-10-19 15:55"` pins the clock (New York or IST time); `--offline DIR`
+reads saved quote files instead of the network. Supports `--market US|IN` across all alert tools.
 
 ## What it reads and writes
 

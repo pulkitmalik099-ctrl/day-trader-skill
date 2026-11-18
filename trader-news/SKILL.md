@@ -26,6 +26,7 @@ Tool in this folder (standard library Python, no keys):
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/news.py"                         # watchlist + plan + portfolio
 python3 "${CLAUDE_SKILL_DIR}/news.py" --tickers TSLA NVDA --hours 12
+python3 "${CLAUDE_SKILL_DIR}/news.py" --tickers RELIANCE.NS TCS.NS --market IN
 python3 "${CLAUDE_SKILL_DIR}/news.py" --no-sec --json
 ```
 

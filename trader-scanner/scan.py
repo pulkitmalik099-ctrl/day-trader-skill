@@ -79,10 +79,21 @@ import time
 import urllib.error
 import urllib.request
 
+_COMMON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "trader-common")
+if _COMMON_DIR not in sys.path:
+    sys.path.insert(0, _COMMON_DIR)
+try:
+    import market as mkt
+except ImportError:
+    mkt = None
+
 UA = "Mozilla/5.0 (compatible; day-trader-skill/2.0; +https://github.com/Jakeschincariol/day-trader-skill)"
+NSE_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 YAHOO_HOSTS = ("https://query2.finance.yahoo.com", "https://query1.finance.yahoo.com")
 NASDAQ_FILES = ("nasdaqlisted.txt", "otherlisted.txt")
 NASDAQ_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/"
+NSE_EQUITY_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
+NIFTY_500_URL = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
 SPARK_MAX = 20      # Yahoo's spark answers 400 above 20 symbols
 PAUSE = 0.3         # seconds between requests: be polite to free endpoints
 BACKOFF = 5.0       # seconds to wait before the one retry after a 429
@@ -91,6 +102,7 @@ BAR_MIN = 5
 MAX_CONFIRM = 200   # stage-2 v8 charts per orb scan, most traded first
 MIN_DAILY_BARS = 30
 DEFAULT_UNIVERSE = "trader/universe.txt"
+DEFAULT_UNIVERSE_IN = "trader/universe_in.txt"
 NOTE = "A scan is a list of charts that match a rule, not a list of stocks to buy."
 
 NYSE_HOLIDAYS = {
@@ -175,29 +187,35 @@ def ts_to_eastern(ts):
     return to_eastern(datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=int(ts)))
 
 
-def parse_now(text):
-    """ISO time -> naive UTC. A time without an offset is taken as New York time."""
+def parse_now(text, market="US"):
+    """ISO time -> naive UTC. A time without an offset is taken as local market time."""
     if not text:
         return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0, tzinfo=None)
     t = text.strip().replace("Z", "+00:00")
     try:
         dt = datetime.datetime.fromisoformat(t)
     except ValueError:
-        raise ScanError('--now wants a time like "2026-10-19 10:15" (New York) or ...Z (UTC)')
+        tz = "IST" if market.upper() in ("IN", "INDIA", "NSE", "BSE") else "New York"
+        raise ScanError('--now wants a time like "2026-10-19 10:15" (%s) or ...Z (UTC)' % tz)
     if dt.tzinfo is None:
+        if mkt and market.upper() in ("IN", "INDIA", "NSE", "BSE"):
+            return mkt.market_to_utc(dt, market)
         return eastern_to_utc(dt)
     return (dt - dt.utcoffset()).replace(tzinfo=None)
 
 
-def parse_hhmm(text, flag="--at"):
+def parse_hhmm(text, flag="--at", market="US"):
     m = re.match(r"^\s*(\d{1,2}):(\d{2})\s*$", text or "")
     if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
-        raise ScanError("%s wants a New York time like 10:15" % flag)
+        tz = "IST" if market.upper() in ("IN", "INDIA", "NSE", "BSE") else "New York"
+        raise ScanError("%s wants a %s time like 10:15" % (flag, tz))
     return datetime.time(int(m.group(1)), int(m.group(2)))
 
 
-def trading_day(d):
-    """(is_trading_day, reason). Weekends and the NYSE holiday list."""
+def trading_day(d, market="US"):
+    """(is_trading_day, reason). Weekends and the market holiday list."""
+    if mkt and market.upper() in ("IN", "INDIA", "NSE", "BSE"):
+        return mkt.is_trading_day(d, market)
     if d.weekday() >= 5:
         return False, "weekend"
     name = NYSE_HOLIDAYS.get(d.isoformat())
@@ -206,9 +224,11 @@ def trading_day(d):
     return True, ""
 
 
-def session(d):
-    """(open_time, close_time) in New York time, or None if closed all day."""
-    ok, _ = trading_day(d)
+def session(d, market="US"):
+    """(open_time, close_time) in local market time, or None if closed all day."""
+    if mkt and market.upper() in ("IN", "INDIA", "NSE", "BSE"):
+        return mkt.session(d, market)
+    ok, _ = trading_day(d, market)
     if not ok:
         return None
     return OPEN, (EARLY if d.isoformat() in NYSE_EARLY_CLOSE else CLOSE)
@@ -267,17 +287,22 @@ def yahoo_get(path):
     raise ScanError("Yahoo answered %s for %s" % (last, path.split("?")[0]))
 
 
-def to_yahoo(sym):
-    return sym.upper().replace(".", "-")
+def to_yahoo(sym, market="US"):
+    if mkt:
+        return mkt.to_yahoo(sym, market)
+    s = sym.upper()
+    if market.upper() in ("IN", "INDIA", "NSE", "BSE"):
+        return s if s.endswith((".NS", ".BO")) else (s + ".NS")
+    return s.replace(".", "-")
 
 
-def spark_path(symbols, rng, interval):
+def spark_path(symbols, rng, interval, market="US"):
     return "/v7/finance/spark?symbols=%s&range=%s&interval=%s" % (
-        ",".join(to_yahoo(s) for s in symbols), rng, interval)
+        ",".join(to_yahoo(s, market) for s in symbols), rng, interval)
 
 
-def chart_path(sym, rng, interval):
-    return "/v8/finance/chart/%s?range=%s&interval=%s" % (to_yahoo(sym), rng, interval)
+def chart_path(sym, rng, interval, market="US"):
+    return "/v8/finance/chart/%s?range=%s&interval=%s" % (to_yahoo(sym, market), rng, interval)
 
 
 # ---------------------------------------------------------------- parsing
@@ -495,18 +520,18 @@ def rsi(closes, n=14):
     return 100 - 100 / (1 + ag / al) if al else 100.0
 
 
-def daily_closes(series, now_utc):
+def daily_closes(series, now_utc, market="US"):
     """[(date, close)] of COMPLETE daily bars: null closes dropped, today's bar dropped
     until the session closes, anything dated after the clock dropped."""
-    now = to_eastern(now_utc)
+    now = mkt.to_market_tz(now_utc, market) if mkt else to_eastern(now_utc)
     today = now.date()
-    s = session(today)
+    s = session(today, market)
     today_done = s is None or now.time() >= s[1]
     out = {}
     for ts, c in zip(series["t"], series["c"]):
         if c is None:
             continue
-        d = ts_to_eastern(ts).date()
+        d = (mkt.ts_to_market_tz(ts, market) if mkt else ts_to_eastern(ts)).date()
         if d > today or (d == today and not today_done):
             continue
         out[d] = float(c)  # one bar a day: a late duplicate (the live tick) wins
@@ -539,7 +564,7 @@ def find_setups(closes):
                   "run_pct": run * 100, "range5_pct": rng5 * 100}
 
 
-def scan_daily(data, symbols, now_utc, min_price, min_volume):
+def scan_daily(data, symbols, now_utc, min_price, min_volume, market="US"):
     """Pure. data = {SYM: series}. Returns (hits, counts, last_date)."""
     hits, dates = [], {}
     counts = {"requested": len(symbols), "fetched": 0, "illiquid": 0, "short": 0, "scanned": 0}
@@ -548,7 +573,7 @@ def scan_daily(data, symbols, now_utc, min_price, min_volume):
         if not s:
             continue
         counts["fetched"] += 1
-        bars = daily_closes(s, now_utc)
+        bars = daily_closes(s, now_utc, market)
         meta = s.get("meta") or {}
         price = meta.get("regularMarketPrice")
         if price is None and bars:
@@ -577,46 +602,50 @@ def scan_daily(data, symbols, now_utc, min_price, min_volume):
 
 # ---------------------------------------------------------------- opening-range breakout
 
-def slot(day, k):
-    return datetime.datetime.combine(day, OPEN) + datetime.timedelta(minutes=BAR_MIN * k)
+def slot(day, k, market="US"):
+    s = session(day, market)
+    open_t = s[0] if s else (mkt.INDIA_OPEN if market.upper() in ("IN", "INDIA", "NSE", "BSE") else OPEN)
+    return datetime.datetime.combine(day, open_t) + datetime.timedelta(minutes=BAR_MIN * k)
 
 
-def session_bars(series, day, cutoff):
-    """5-minute bars of `day` that are complete at `cutoff` (naive New York time),
+def session_bars(series, day, cutoff, market="US"):
+    """5-minute bars of `day` that are complete at `cutoff` (naive local time),
     on the grid, with a close. Sorted, one per slot."""
-    s = session(day)
-    close_t = s[1] if s else CLOSE
+    s = session(day, market)
+    close_t = s[1] if s else (mkt.INDIA_CLOSE if market.upper() in ("IN", "INDIA", "NSE", "BSE") else CLOSE)
+    open_t = s[0] if s else (mkt.INDIA_OPEN if market.upper() in ("IN", "INDIA", "NSE", "BSE") else OPEN)
     out = {}
     hs, ls = series.get("h"), series.get("l")
     for i, ts in enumerate(series["t"]):
         c = series["c"][i]
         if c is None:
             continue
-        et = ts_to_eastern(ts)
-        if et.date() != day or et.second or et.minute % BAR_MIN:
+        local_t = mkt.ts_to_market_tz(ts, market) if mkt else ts_to_eastern(ts)
+        if local_t.date() != day or local_t.second or local_t.minute % BAR_MIN:
             continue  # another day, or the live tick off the grid
-        if et.time() < OPEN or et.time() >= close_t:
-            continue  # pre-market, after hours, the 4:00 PM closing print
-        if et + datetime.timedelta(minutes=BAR_MIN) > cutoff:
+        if local_t.time() < open_t or local_t.time() >= close_t:
+            continue  # outside regular trading hours
+        if local_t + datetime.timedelta(minutes=BAR_MIN) > cutoff:
             continue  # still in progress at the cutoff
         v = series.get("v")
-        out[et] = {"start": et, "c": float(c),
+        out[local_t] = {"start": local_t, "c": float(c),
                    "h": None if not hs or hs[i] is None else float(hs[i]),
                    "l": None if not ls or ls[i] is None else float(ls[i]),
                    "v": (v[i] or 0) if v else 0}
     return [out[k] for k in sorted(out)]
 
 
-def usable(bars, day, cutoff, n_range):
-    """Every slot from 9:30 to the cutoff is there, and at least the range."""
-    want = int((cutoff - slot(day, 0)).total_seconds() // (BAR_MIN * 60))
-    s = session(day)
+def usable(bars, day, cutoff, n_range, market="US"):
+    """Every slot from open to the cutoff is there, and at least the range."""
+    start_slot = slot(day, 0, market)
+    want = int((cutoff - start_slot).total_seconds() // (BAR_MIN * 60))
+    s = session(day, market)
     if s:
-        want = min(want, int((datetime.datetime.combine(day, s[1]) - slot(day, 0)).total_seconds()
+        want = min(want, int((datetime.datetime.combine(day, s[1]) - start_slot).total_seconds()
                              // (BAR_MIN * 60)))
     if want < n_range or len(bars) != want:
         return False
-    return all(b["start"] == slot(day, k) for k, b in enumerate(bars))
+    return all(b["start"] == slot(day, k, market) for k, b in enumerate(bars))
 
 
 def orb_candidate(bars, n_range):
@@ -644,47 +673,49 @@ def orb_hit(bars, n_range):
     return None
 
 
-def orb_window(now_utc, at, or_minutes, until, explicit_day=None):
-    """-> (day, cutoff naive ET) or raise ScanError with the plain message."""
-    now = to_eastern(now_utc)
+def orb_window(now_utc, at, or_minutes, until, explicit_day=None, market="US"):
+    """-> (day, cutoff naive local time) or raise ScanError with the plain message."""
+    now = mkt.to_market_tz(now_utc, market) if mkt else to_eastern(now_utc)
     day = explicit_day or now.date()
     if or_minutes < BAR_MIN or or_minutes % BAR_MIN or or_minutes > 120:
         raise ScanError("--or-minutes wants a multiple of 5 from 5 to 120 (15 is the classic)")
-    ok, why = trading_day(day)
+    ok, why = trading_day(day, market)
+    tz = mkt.tz_name(market) if mkt else "ET"
     if not ok:
         raise ScanError("No session on %s (%s): the market is closed. Run orb on a trading day "
                         "after the opening range, or replay a past day with --offline." % (day_label(day), why))
-    s = session(day)
-    range_end = slot(day, or_minutes // BAR_MIN)
+    s = session(day, market)
+    range_end = slot(day, or_minutes // BAR_MIN, market)
     first_close = range_end + datetime.timedelta(minutes=BAR_MIN)
     close_dt = datetime.datetime.combine(day, s[1])
     if at is not None:
         cutoff = datetime.datetime.combine(day, at)
         if explicit_day is None and cutoff > now + datetime.timedelta(seconds=59):
-            raise ScanError("--at %s is later than now (%s ET)." % (at.strftime("%H:%M"), clock_label(now)))
+            raise ScanError("--at %s is later than now (%s %s)." % (at.strftime("%H:%M"), clock_label(now), tz))
         if cutoff > close_dt:
             raise ScanError("--at %s is after the %s close on %s." % (at.strftime("%H:%M"), clock_label(close_dt),
                                                                        day_label(day)))
     else:
         cutoff = now.replace(second=0, microsecond=0)
         if cutoff >= close_dt:
-            raise ScanError("The market closed at %s ET on %s. Replay the session with --at 10:15."
-                            % (clock_label(close_dt), day_label(day)))
+            raise ScanError("The market closed at %s %s on %s. Replay the session with --at 10:15."
+                            % (clock_label(close_dt), tz, day_label(day)))
+    open_str = clock_label(slot(day, 0, market))
     if cutoff < first_close:
-        raise ScanError("It is %s ET: the %d-minute opening range runs 9:30 to %s and the first bar after it "
+        raise ScanError("It is %s %s: the %d-minute opening range runs %s to %s and the first bar after it "
                         "closes at %s. Run orb again after %s."
-                        % (clock_label(cutoff), or_minutes, clock_label(range_end), clock_label(first_close),
+                        % (clock_label(cutoff), tz, or_minutes, open_str, clock_label(range_end), clock_label(first_close),
                            clock_label(first_close)))
     if until is not None and cutoff.time() > until:
-        raise ScanError("It is %s ET, after %s, your last time for new entries (no_entries_after): an "
+        raise ScanError("It is %s %s, after %s, your last time for new entries (no_entries_after): an "
                         "opening-range breakout found now is expired. Run orb tomorrow after %s, or replay "
-                        "today with --at 10:15." % (clock_label(cutoff), until.strftime("%H:%M"),
+                        "today with --at 10:15." % (clock_label(cutoff), tz, until.strftime("%H:%M"),
                                                       clock_label(first_close)))
     return day, cutoff
 
 
 def scan_orb(stage1, symbols, day, cutoff, or_minutes, min_price=0.0, min_volume=0, confirm=None,
-             max_confirm=None):
+             max_confirm=None, market="US"):
     """stage1 = {SYM: series} with closes (spark or v8). confirm(sym) -> series with highs/lows
     (None = use the stage-1 series). With confirm and max_confirm, only the max_confirm most
     traded candidates (price x volume so far) are confirmed; the rest are counted as unconfirmed.
@@ -698,8 +729,8 @@ def scan_orb(stage1, symbols, day, cutoff, or_minutes, min_price=0.0, min_volume
         if not s:
             continue
         counts["fetched"] += 1
-        bars = session_bars(s, day, cutoff)
-        if not usable(bars, day, cutoff, n_range):
+        bars = session_bars(s, day, cutoff, market)
+        if not usable(bars, day, cutoff, n_range, market):
             counts["unusable"] += 1
             continue
         vol = sum(b["v"] for b in bars) if s.get("v") else (s.get("meta") or {}).get("regularMarketVolume") or 0
@@ -722,8 +753,8 @@ def scan_orb(stage1, symbols, day, cutoff, or_minutes, min_price=0.0, min_volume
             except ScanError as e:
                 failed[sym] = str(e)
                 continue
-            full = session_bars(s2, day, cutoff)
-            if not usable(full, day, cutoff, n_range):
+            full = session_bars(s2, day, cutoff, market)
+            if not usable(full, day, cutoff, n_range, market):
                 failed[sym] = "the v8 chart has a missing bar"
                 continue
         counts["confirmed"] += 1
@@ -744,16 +775,16 @@ def progress(a, msg):
         print(msg, file=sys.stderr)
 
 
-def fetch_spark(symbols, rng, interval, pause, a=None):
+def fetch_spark(symbols, rng, interval, pause, a=None, market="US"):
     """Batches of 20. -> ({SYM: series}, {SYM: error})."""
     data, failed = {}, {}
     batches = [symbols[i:i + SPARK_MAX] for i in range(0, len(symbols), SPARK_MAX)]
     for k, batch in enumerate(batches):
         if k and pause:
             SLEEP(pause)
-        wanted = {to_yahoo(s): s for s in batch}
+        wanted = {to_yahoo(s, market): s for s in batch}
         try:
-            got = parse_spark(yahoo_get(spark_path(batch, rng, interval)), wanted)
+            got = parse_spark(yahoo_get(spark_path(batch, rng, interval, market)), wanted)
         except (ScanError, ValueError) as e:
             for s in batch:
                 failed[s] = str(e)
@@ -768,7 +799,7 @@ def fetch_spark(symbols, rng, interval, pause, a=None):
     return data, failed
 
 
-def read_symbols(a, offline_syms=None):
+def read_symbols(a, offline_syms=None, market="US"):
     if a.symbols:
         syms = [s for s in re.split(r"[,\s]+", a.symbols.upper()) if s]
     elif a.watchlist:
@@ -776,7 +807,8 @@ def read_symbols(a, offline_syms=None):
     elif offline_syms is not None and not a.universe:
         syms = sorted(offline_syms)  # offline: every chart in the file, unless a list was given
     else:
-        path = a.universe or DEFAULT_UNIVERSE
+        def_univ = DEFAULT_UNIVERSE_IN if market.upper() in ("IN", "INDIA", "NSE", "BSE") else DEFAULT_UNIVERSE
+        path = a.universe or def_univ
         if not os.path.exists(path):
             raise ScanError("no %s yet: run `scan.py universe` first, or pass --symbols" % path)
         syms = symbols_from_file(path)
@@ -831,13 +863,106 @@ def write_json(path, doc):
         fh.write("\n")
 
 
-def money(x):
+def money(x, market="US"):
+    if mkt:
+        return mkt.format_money(x, market)
     return "${:,.2f}".format(x)
+
+
+def parse_nse_csv(text):
+    """Parse NSE EQUITY_L.csv (or NIFTY 500 csv), returning list of (symbol, company_name) for EQ series."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return [], {"rows": 0, "keep": 0}
+    header_cols = [c.strip().upper() for c in lines[0].split(",")]
+    sym_idx = -1
+    name_idx = -1
+    series_idx = -1
+    for i, col in enumerate(header_cols):
+        if col in ("SYMBOL", "SYMBOL\n"):
+            sym_idx = i
+        elif col in ("NAME OF COMPANY", "COMPANY NAME"):
+            name_idx = i
+        elif col == "SERIES":
+            series_idx = i
+    if sym_idx == -1:
+        sym_idx = 0
+        name_idx = 1 if len(header_cols) > 1 else 0
+
+    kept = []
+    total_rows = 0
+    dropped = {"non_eq": 0, "invalid_ticker": 0}
+    for line in lines[1:]:
+        parts = [p.strip().strip('"') for p in line.split(",")]
+        if len(parts) <= sym_idx:
+            continue
+        total_rows += 1
+        sym = parts[sym_idx].upper()
+        name = parts[name_idx] if name_idx >= 0 and len(parts) > name_idx else sym
+        series = parts[series_idx].upper() if series_idx >= 0 and len(parts) > series_idx else "EQ"
+        if series != "EQ":
+            dropped["non_eq"] += 1
+            continue
+        if not re.match(r"^[A-Z0-9&]{1,20}$", sym):
+            dropped["invalid_ticker"] += 1
+            continue
+        kept.append((sym, name))
+    counts = {"rows": total_rows, "keep": len(kept)}
+    counts.update(dropped)
+    return kept, counts
+
+
+def cmd_universe_india(a, market="IN"):
+    t0 = time.time()
+    url = NIFTY_500_URL if getattr(a, "index", None) == "nifty500" else NSE_EQUITY_URL
+    out_file = a.out if a.out != DEFAULT_UNIVERSE else DEFAULT_UNIVERSE_IN
+    if a.offline:
+        p = os.path.join(a.offline, "EQUITY_L.csv") if os.path.isdir(a.offline) else a.offline
+        if not os.path.exists(p):
+            raise ScanError("no %s in %s" % (os.path.basename(p), a.offline))
+        with open(p, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    else:
+        req = urllib.request.Request(url, headers={"User-Agent": NSE_UA, "Accept": "*/*"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                text = r.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            raise ScanError("NSE archives answered HTTP %d for %s" % (e.code, url))
+        except (urllib.error.URLError, OSError) as e:
+            raise ScanError("could not reach nseindia.com: %s" % getattr(e, "reason", e))
+
+    kept, counts = parse_nse_csv(text)
+    if not a.no_write:
+        d = os.path.dirname(out_file)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        with open(out_file, "w", encoding="utf-8") as fh:
+            for sym, name in kept:
+                fh.write("%s|%s\n" % (sym, name))
+    dropped = {k: v for k, v in counts.items() if k not in ("keep", "rows")}
+    if a.json:
+        print(json.dumps({"count": len(kept), "rows": counts.get("rows", 0),
+                          "dropped": dropped, "out": None if a.no_write else out_file,
+                          "seconds": round(time.time() - t0, 1)}, indent=2))
+    else:
+        print("NSE symbol directory: %s rows." % "{:,}".format(counts.get("rows", 0)))
+        print("Kept %s Indian (NSE EQ) listed common equities." % "{:,}".format(len(kept)))
+        if dropped:
+            print("Dropped: " + ", ".join("%s %s" % ("{:,}".format(v), k)
+                                          for k, v in sorted(dropped.items(), key=lambda kv: -kv[1])) + ".")
+        if not a.no_write:
+            print("Wrote %s (one SYMBOL|Name a line)." % out_file)
+    return 0 if kept else 1
 
 
 # ---------------------------------------------------------------- commands
 
 def cmd_universe(a):
+    market = (getattr(a, "market", None) or "US").upper()
+    if market in ("IN", "INDIA", "NSE", "BSE"):
+        return cmd_universe_india(a, market)
+
     t0 = time.time()
     texts = {}
     for k, fname in enumerate(NASDAQ_FILES):
@@ -882,23 +1007,28 @@ def cmd_universe(a):
 
 def cmd_daily(a):
     t0 = time.time()
-    now = parse_now(a.now)
+    cfg = read_config(getattr(a, "config", "trader/config.json"))
+    market = (getattr(a, "market", None) or cfg.get("market") or "US").upper()
+    try:
+        now = parse_now(a.now, market)
+    except TypeError:
+        now = parse_now(a.now)
     offline_syms = None
     if a.offline:
         data, failed = load_offline(a.offline)
         offline_syms = sorted(set(data) | set(failed))
-    symbols = read_symbols(a, offline_syms)
+    symbols = read_symbols(a, offline_syms, market)
     if not a.offline:
         progress(a, "Fetching daily closes for %s symbols (%d spark requests)..."
                  % ("{:,}".format(len(symbols)), (len(symbols) + SPARK_MAX - 1) // SPARK_MAX))
-        data, failed = fetch_spark(symbols, "3mo", "1d", a.pause, a)
-    hits, counts, last_date = scan_daily(data, symbols, now, a.min_price, a.min_volume)
+        data, failed = fetch_spark(symbols, "3mo", "1d", a.pause, a, market)
+    hits, counts, last_date = scan_daily(data, symbols, now, a.min_price, a.min_volume, market)
     nfailed = len(symbols) - counts["fetched"]
     as_of = ("%s close" % last_date.isoformat()) if last_date else None
     doc = {"created_by": "trader-scanner", "created_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": "daily",
            "as_of": as_of, "universe": len(symbols), "scanned": counts["scanned"], "failed": nfailed,
            "source": "yahoo", "filters": {"min_price": a.min_price, "min_volume": a.min_volume},
-           "note": NOTE, "hits": hits}
+           "note": NOTE, "hits": hits, "market": market}
     if a.offline:
         doc["offline"] = os.path.basename(a.offline.rstrip("/"))
     if not a.no_write:
@@ -906,13 +1036,15 @@ def cmd_daily(a):
     if a.json:
         print(json.dumps(dict(doc, counts=counts, seconds=round(time.time() - t0, 1)), indent=2))
         return 0 if hits else 1
-    local = to_eastern(now)
-    print("Daily scan, %s ET, closes through %s (Yahoo spark, daily closes only)." % (
-        local.strftime("%a %Y-%m-%d %H:%M"), last_date.isoformat() if last_date else "nothing"))
-    print("Fetched %s of %s charts%s. %s passed the liquidity filter ($%s+ and %s+ shares)%s; "
+    local = mkt.to_market_tz(now, market) if mkt else to_eastern(now)
+    tz = mkt.tz_name(market) if mkt else "ET"
+    curr = mkt.currency_symbol(market) if mkt else "$"
+    print("Daily scan, %s %s, closes through %s (Yahoo spark, daily closes only)." % (
+        local.strftime("%a %Y-%m-%d %H:%M"), tz, last_date.isoformat() if last_date else "nothing"))
+    print("Fetched %s of %s charts%s. %s passed the liquidity filter (%s%s+ and %s+ shares)%s; "
           "%s scanned." % ("{:,}".format(counts["fetched"]), "{:,}".format(len(symbols)),
                            (" (%s failed or had no data)" % "{:,}".format(nfailed)) if nfailed else "",
-                           "{:,}".format(counts["fetched"] - counts["illiquid"]), _n(a.min_price),
+                           "{:,}".format(counts["fetched"] - counts["illiquid"]), curr, _n(a.min_price),
                            "{:,}".format(a.min_volume),
                            (", %d had under %d days" % (counts["short"], MIN_DAILY_BARS)) if counts["short"] else "",
                            "{:,}".format(counts["scanned"])))
@@ -924,7 +1056,7 @@ def cmd_daily(a):
     else:
         print("No setups.")
     for h in hits[:a.show]:
-        print("  %-6s %10s  RSI %5.1f  %s" % (h["symbol"], money(h["price"]), h["rsi"],
+        print("  %-6s %10s  RSI %5.1f  %s" % (h["symbol"], money(h["price"], market), h["rsi"],
                                               ", ".join(LABEL[t] for t in h["setups"])))
     if len(hits) > a.show:
         print("  ... and %d more in the watchlist (--show N for more)." % (len(hits) - a.show))
@@ -941,10 +1073,21 @@ def _n(x):
 
 def cmd_orb(a):
     t0 = time.time()
-    now = parse_now(a.now)
-    at = parse_hhmm(a.at) if a.at else None
     cfg = read_config(a.config)
-    until = parse_hhmm(a.until or cfg.get("no_entries_after") or "15:30", "--until")
+    market = (getattr(a, "market", None) or cfg.get("market") or "US").upper()
+    try:
+        now = parse_now(a.now) if market == "US" else parse_now(a.now, market)
+    except TypeError:
+        now = parse_now(a.now)
+    try:
+        at = (parse_hhmm(a.at) if market == "US" else parse_hhmm(a.at, "--at", market)) if a.at else None
+    except TypeError:
+        at = parse_hhmm(a.at, "--at") if a.at else None
+    def_until = "15:15" if market in ("IN", "INDIA", "NSE", "BSE") else "15:30"
+    try:
+        until = parse_hhmm(a.until or cfg.get("no_entries_after") or def_until) if market == "US" else parse_hhmm(a.until or cfg.get("no_entries_after") or def_until, "--until", market)
+    except TypeError:
+        until = parse_hhmm(a.until or cfg.get("no_entries_after") or def_until, "--until")
     data = failed = None
     explicit_day = None
     offline_syms = None
@@ -952,22 +1095,26 @@ def cmd_orb(a):
         data, failed = load_offline(a.offline)
         offline_syms = sorted(set(data) | set(failed))
         if not a.now:
-            days = [ts_to_eastern(s["t"][-1]).date() for s in data.values() if s["t"]]
+            days = [(mkt.ts_to_market_tz(s["t"][-1], market) if mkt else ts_to_eastern(s["t"][-1])).date() for s in data.values() if s["t"]]
             if days:
                 explicit_day = max(days)
                 if at is None:
                     raise ScanError("offline replay: give --at HH:MM or --now \"YYYY-MM-DD HH:MM\"")
-    day, cutoff = orb_window(now, at, a.or_minutes, until, explicit_day)
-    symbols = read_symbols(a, offline_syms)
+    day, cutoff = orb_window(now, at, a.or_minutes, until, explicit_day, market)
+    symbols = read_symbols(a, offline_syms, market)
     confirm = None
     if not a.offline:
-        today = to_eastern(parse_now(None)).date()
+        try:
+            today_utc = parse_now(None) if market == "US" else parse_now(None, market)
+        except TypeError:
+            today_utc = parse_now(None)
+        today = (mkt.to_market_tz(today_utc, market) if mkt else to_eastern(today_utc)).date()
         if (today - day).days > 6:
             raise ScanError("Yahoo's free 5-minute history is short: replay %s with --offline" % day.isoformat())
         rng = "1d" if day == today else "5d"
         progress(a, "Stage 1: 5-minute closes for %s symbols (%d spark requests)..."
                  % ("{:,}".format(len(symbols)), (len(symbols) + SPARK_MAX - 1) // SPARK_MAX))
-        data, failed = fetch_spark(symbols, rng, "%dm" % BAR_MIN, a.pause, a)
+        data, failed = fetch_spark(symbols, rng, "%dm" % BAR_MIN, a.pause, a, market)
         done = []
 
         def confirm(sym):
@@ -976,18 +1123,20 @@ def cmd_orb(a):
             done.append(sym)
             if len(done) % 50 == 0:
                 progress(a, "  stage 2: %d v8 charts so far" % len(done))
-            return parse_chart(yahoo_get(chart_path(sym, rng, "%dm" % BAR_MIN)), sym)
+            return parse_chart(yahoo_get(chart_path(sym, rng, "%dm" % BAR_MIN, market)), sym)
     hits, counts, failed2 = scan_orb(data, symbols, day, cutoff, a.or_minutes, a.min_price, a.min_volume, confirm,
-                                     a.max_confirm)
+                                     a.max_confirm, market)
     failed = dict(failed or {})
     failed.update(failed2)
     nfailed = len([s for s in symbols if s in failed])
-    as_of = "%s %s ET" % (day.isoformat(), cutoff.strftime("%H:%M"))
+    tz = mkt.tz_name(market) if mkt else "ET"
+    as_of = "%s %s %s" % (day.isoformat(), cutoff.strftime("%H:%M"), tz)
     doc = {"created_by": "trader-scanner", "created_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": "orb",
            "as_of": as_of, "universe": len(symbols), "scanned": counts["scanned"], "failed": nfailed,
            "unconfirmed": counts["unconfirmed"], "source": "yahoo", "or_minutes": a.or_minutes,
            "interval": "%dm" % BAR_MIN,
-           "filters": {"min_price": a.min_price, "min_volume": a.min_volume}, "note": NOTE, "hits": hits}
+           "filters": {"min_price": a.min_price, "min_volume": a.min_volume}, "note": NOTE, "hits": hits,
+           "market": market}
     if a.offline:
         doc["offline"] = os.path.basename(a.offline.rstrip("/"))
     if not a.no_write:
@@ -995,8 +1144,9 @@ def cmd_orb(a):
     if a.json:
         print(json.dumps(dict(doc, counts=counts, seconds=round(time.time() - t0, 1)), indent=2))
         return 0 if hits else 1
-    print("Opening-range breakout scan, %s %s ET: %d-minute range (9:30 to %s), 5-minute bars, Yahoo."
-          % (day_label(day), clock_label(cutoff), a.or_minutes, clock_label(slot(day, a.or_minutes // BAR_MIN))))
+    open_str = clock_label(slot(day, 0, market))
+    print("Opening-range breakout scan, %s %s %s: %d-minute range (%s to %s), 5-minute bars, Yahoo."
+          % (day_label(day), clock_label(cutoff), tz, a.or_minutes, open_str, clock_label(slot(day, a.or_minutes // BAR_MIN, market))))
     print("Fetched %s of %s charts%s; %s usable%s; %s candidates, %s confirmed with real highs and lows."
           % ("{:,}".format(counts["fetched"]), "{:,}".format(len(symbols)),
              (" (%s failed or had no data)" % "{:,}".format(nfailed)) if nfailed else "",
@@ -1012,7 +1162,7 @@ def cmd_orb(a):
                  else "{:,}".format(counts["scanned"]), clock_label(cutoff)))
         for h in hits[:a.show]:
             print("  %8s  %-6s %10s  range %s to %s  %+.2f%% over" % (
-                h["at"], h["symbol"], money(h["price"]), _p(h["or_low"]), _p(h["or_high"]), h["pct_over"]))
+                h["at"], h["symbol"], money(h["price"], market), _p(h["or_low"]), _p(h["or_high"]), h["pct_over"]))
         if len(hits) > a.show:
             print("  ... and %d more in the watchlist (--show N for more)." % (len(hits) - a.show))
     else:
@@ -1031,23 +1181,26 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Chart Scanner (trader-scanner): daily setups and opening-range breakouts.")
     sub = ap.add_subparsers(dest="cmd")
 
-    p = sub.add_parser("universe", help="download Nasdaq Trader's lists -> trader/universe.txt")
+    p = sub.add_parser("universe", help="download Nasdaq Trader's lists or NSE equity list -> trader/universe.txt")
     p.add_argument("--out", default=DEFAULT_UNIVERSE)
-    p.add_argument("--offline", metavar="DIR", help="a folder with nasdaqlisted.txt and otherlisted.txt")
+    p.add_argument("--offline", metavar="DIR", help="a folder with symbol lists (nasdaqlisted.txt or EQUITY_L.csv)")
     p.add_argument("--no-write", action="store_true")
     p.add_argument("--pause", type=float, default=PAUSE)
+    p.add_argument("--market", choices=["US", "IN", "NSE", "BSE"], default="US", help="market mode (default: US)")
+    p.add_argument("--index", choices=["all", "nifty500"], default="all", help="for India universe: all or nifty500")
     p.add_argument("--json", action="store_true")
 
     def common(p, min_price, min_volume):
         g = p.add_mutually_exclusive_group()
         g.add_argument("--symbols", help="comma-separated tickers instead of the universe")
         g.add_argument("--watchlist", metavar="FILE", help="a watchlist.json (hits) or a text file of tickers")
-        p.add_argument("--universe", help="symbol list, one SYMBOL|Name a line (default %s)" % DEFAULT_UNIVERSE)
+        p.add_argument("--universe", help="symbol list, one SYMBOL|Name a line")
         p.add_argument("--limit", type=int, help="scan only the first N symbols")
         p.add_argument("--min-price", type=float, default=min_price)
         p.add_argument("--min-volume", type=int, default=min_volume)
+        p.add_argument("--market", choices=["US", "IN", "NSE", "BSE"], help="market mode (default: config or US)")
         p.add_argument("--offline", metavar="PATH", help="fixture folder or file instead of the network")
-        p.add_argument("--now", help='pretend it is this time ("2026-10-19 10:15" New York, or ...Z)')
+        p.add_argument("--now", help='pretend it is this time ("2026-10-19 10:15", or ...Z)')
         p.add_argument("--out", default="trader/watchlist.json")
         p.add_argument("--no-write", action="store_true")
         p.add_argument("--pause", type=float, default=PAUSE, help="seconds between requests (%.1f)" % PAUSE)
@@ -1057,13 +1210,14 @@ def main(argv=None):
 
     p = sub.add_parser("daily", help="pre-market setups from daily closes")
     common(p, 5.0, 1000000)
+    p.add_argument("--config", default="trader/config.json")
     p = sub.add_parser("orb", help="opening-range breakouts so far today")
     common(p, 5.0, 0)
     p.add_argument("--or-minutes", type=int, default=15)
     p.add_argument("--max-confirm", type=int, default=MAX_CONFIRM,
                    help="v8 charts to fetch in stage 2, most traded first (%d; 0 = all)" % MAX_CONFIRM)
-    p.add_argument("--at", help="cut the clock at this New York time, HH:MM")
-    p.add_argument("--until", help="no new entries after HH:MM (default: config no_entries_after, 15:30)")
+    p.add_argument("--at", help="cut the clock at this local time, HH:MM")
+    p.add_argument("--until", help="no new entries after HH:MM (default: config no_entries_after, 15:30/15:15)")
     p.add_argument("--config", default="trader/config.json")
     a = ap.parse_args(argv)
     if not a.cmd:

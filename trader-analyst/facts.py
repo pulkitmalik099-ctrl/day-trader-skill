@@ -467,6 +467,14 @@ def ticker_ciks(fetcher):
     return out
 
 
+INDIAN_ADR_MAP = {
+    "INFY.NS": "INFY", "INFY.BO": "INFY",
+    "WIPRO.NS": "WIT", "WIPRO.BO": "WIT",
+    "HDFCBANK.NS": "HDB", "HDFCBANK.BO": "HDB",
+    "ICICIBANK.NS": "IBN", "ICICIBANK.BO": "IBN",
+}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("tickers", nargs="*", help="tickers, e.g. AAPL KO")
@@ -478,6 +486,8 @@ def main(argv=None):
     ap.add_argument("--config", default="trader/config.json")
     ap.add_argument("--offline", metavar="DIR")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--market", default="US", choices=["US", "IN", "NSE", "BSE"],
+                    help="market: US (default) or IN / NSE / BSE for Indian equities")
     args = ap.parse_args(argv)
     if not args.tickers and not args.cik:
         ap.print_help()
@@ -499,10 +509,16 @@ def main(argv=None):
         if args.cik:
             cik, name = str(args.cik).zfill(10), None
         else:
-            cik, name = ciks.get(tick.replace("-", "."), (None, None))
+            lookup_tick = INDIAN_ADR_MAP.get(tick, tick.replace("-", "."))
+            cik, name = ciks.get(lookup_tick, (None, None))
         if not cik:
-            print("facts: no SEC CIK for %s (is it a US filer? ETFs and foreign filers "
-                  "may not have XBRL facts)" % tick, file=sys.stderr)
+            if tick.endswith((".NS", ".BO")):
+                print("facts: %s is an Indian listed company (NSE/BSE). Its quarterly results are filed with "
+                      "SEBI/NSE/BSE under LODR regulations, not SEC EDGAR. (For ADRs, use US ticker e.g. INFY, WIT, HDB, IBN)."
+                      % tick, file=sys.stderr)
+            else:
+                print("facts: no SEC CIK for %s (is it a US filer? ETFs and foreign filers "
+                      "may not have XBRL facts)" % tick, file=sys.stderr)
             failed += 1
             continue
         try:

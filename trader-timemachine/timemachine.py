@@ -78,6 +78,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+_COMMON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "trader-common")
+if _COMMON_DIR not in sys.path:
+    sys.path.insert(0, _COMMON_DIR)
+try:
+    import market as mkt
+except ImportError:
+    mkt = None
+
 UA = "Mozilla/5.0 (compatible; day-trader-skill/2.0; +https://github.com/Jakeschincariol/day-trader-skill)"
 PAUSE = 0.5          # seconds between requests: be polite to free endpoints
 BACKOFF = 5.0        # seconds to wait once after a 429
@@ -86,6 +94,9 @@ INTERVAL = 300       # 5-minute bars, in seconds
 SESSION_BARS = 78    # 9:30 to 16:00 in 5-minute bars
 OPEN_MIN = 9 * 60 + 30
 CLOSE_MIN = 16 * 60
+INDIA_SESSION_BARS = 75   # 9:15 to 15:30 in 5-minute bars
+INDIA_OPEN_MIN = 9 * 60 + 15
+INDIA_CLOSE_MIN = 15 * 60 + 30
 MIN_SESSIONS = 20
 SAMPLE_PATHS = 160
 BAND_PATHS = 2000
@@ -139,17 +150,38 @@ def eastern_to_utc(local):
     return local + datetime.timedelta(hours=5)
 
 
-def parse_now(text):
-    """ISO time -> naive UTC. A time without an offset is taken as New York time."""
+IST_OFFSET = datetime.timedelta(hours=5, minutes=30)
+
+
+def to_ist(utc):
+    return utc.replace(tzinfo=None) + IST_OFFSET
+
+
+def ist_to_utc(local):
+    return local.replace(tzinfo=None) - IST_OFFSET
+
+
+def parse_now(text, market="US"):
+    """ISO time -> naive UTC. A time without an offset is taken as local market time."""
     if not text:
         return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0, tzinfo=None)
-    t = text.strip().replace("Z", "+00:00")
+    m = (market or "US").upper()
+    is_in = m in ("IN", "INDIA", "NSE", "BSE")
+    t = text.strip()
+    if t.upper().endswith(" ET"):
+        t = t[:-3].strip()
+        is_in = False
+    elif t.upper().endswith(" IST"):
+        t = t[:-4].strip()
+        is_in = True
+    t = t.replace("Z", "+00:00")
     try:
         dt = datetime.datetime.fromisoformat(t)
     except ValueError:
-        raise TMError("--now wants a time like \"2026-10-19 10:15\" (New York) or ...Z (UTC)")
+        tz = "IST" if is_in else "New York"
+        raise TMError("--now wants a time like \"2026-10-19 10:15\" (%s) or ...Z (UTC)" % tz)
     if dt.tzinfo is None:
-        return eastern_to_utc(dt)
+        return ist_to_utc(dt) if is_in else eastern_to_utc(dt)
     return (dt - dt.utcoffset()).replace(tzinfo=None)
 
 
@@ -157,11 +189,12 @@ def utc_of(ts):
     return EPOCH + datetime.timedelta(seconds=int(ts))
 
 
-def parse_clock(text, what):
+def parse_clock(text, what, market="US"):
     """'10:15 AM', '10:15am', '15:55' or '3:55' (a bare 1 to 8 o'clock means p.m.) -> minutes after midnight."""
     m = re.match(r"^\s*(\d{1,2}):(\d{2})\s*(?:([AaPp])\.?\s*[Mm]\.?)?\s*$", str(text or ""))
     if not m:
-        raise TMError("%s wants a New York time like 10:15 AM or 15:55, not %r" % (what, text))
+        tz = "IST" if (market or "US").upper() in ("IN", "INDIA", "NSE", "BSE") else "New York"
+        raise TMError("%s wants a %s time like 10:15 AM or 15:55, not %r" % (what, tz, text))
     h, mi, ap = int(m.group(1)), int(m.group(2)), (m.group(3) or "").lower()
     if mi > 59 or h > 23 or (ap and not 1 <= h <= 12):
         raise TMError("%s %r is not a clock time" % (what, text))
@@ -185,9 +218,15 @@ def clock24(minutes):
 
 # ---------------------------------------------------------------- data
 
-def chart_url(sym, host="query2"):
+def chart_url(sym, host="query2", market="US"):
+    m = (market or "US").upper()
+    if mkt:
+        ysym = mkt.to_yahoo(sym, m)
+    else:
+        ysym = sym.upper() + (".NS" if m in ("IN", "INDIA", "NSE") else "")
+        ysym = ysym.replace(".", "-") if m == "US" else ysym
     return "https://%s.finance.yahoo.com/v8/finance/chart/%s?range=60d&interval=5m" % (
-        host, urllib.parse.quote(sym.upper().replace(".", "-")))
+        host, urllib.parse.quote(ysym))
 
 
 def _sleep(seconds):
@@ -200,7 +239,7 @@ def _get(url, timeout=20):
         return r.read().decode("utf-8", "replace")
 
 
-def fetch_chart(sym):
+def fetch_chart(sym, market="US"):
     """One request for 60 days of 5-min bars. query2 first, one retry after a 429,
     then query1 on 429 or 5xx."""
     last = None
@@ -208,7 +247,7 @@ def fetch_chart(sym):
         if n:
             _sleep(PAUSE)
         for attempt in (0, 1):
-            url = chart_url(sym, host)
+            url = chart_url(sym, host, market=market)
             try:
                 return _get(url)
             except urllib.error.HTTPError as e:
@@ -234,10 +273,15 @@ def fetch_chart(sym):
     raise TMError("Yahoo answered HTTP %s for %s on both hosts. Try again later." % (last, sym.upper()))
 
 
-def read_offline(path, sym):
+def read_offline(path, sym, market="US"):
     """A saved Yahoo chart file (.json or .json.gz), or a folder holding <SYM>-60d5m.json(.gz)."""
+    m = (market or "US").upper()
+    ysym = mkt.to_yahoo(sym, m) if mkt else (sym.upper() + (".NS" if m in ("IN", "INDIA", "NSE") else ""))
+    names = ["%s-60d5m.json" % sym.upper(), "%s-60d5m.json.gz" % sym.upper()]
+    if ysym != sym.upper():
+        names = ["%s-60d5m.json" % ysym, "%s-60d5m.json.gz" % ysym] + names
     if os.path.isdir(path):
-        for name in ("%s-60d5m.json" % sym.upper(), "%s-60d5m.json.gz" % sym.upper()):
+        for name in names:
             if os.path.exists(os.path.join(path, name)):
                 path = os.path.join(path, name)
                 break
@@ -268,12 +312,16 @@ def chart_result(text, sym):
     return res[0]
 
 
-def parse_bars(result, now_utc):
+def parse_bars(result, now_utc, market="US"):
     """Yahoo chart result -> (meta, bars, dropped). Regular-session 5-min bars only,
     oldest first. Dropped: bars with a missing price, bars off the 5-minute grid
     (the live tick, e.g. 10:49:45), bars not complete yet (now < start + 5 min,
     where now is the earlier of --now and the data's own regularMarketTime), and
-    bars outside 9:30 to 16:00 New York time."""
+    bars outside session hours."""
+    is_in = (market or "US").upper() in ("IN", "INDIA", "NSE", "BSE")
+    to_loc = to_ist if is_in else to_eastern
+    open_min = INDIA_OPEN_MIN if is_in else OPEN_MIN
+    session_bars = INDIA_SESSION_BARS if is_in else SESSION_BARS
     meta = result.get("meta") or {}
     stamps = result.get("timestamp") or []
     q = ((result.get("indicators") or {}).get("quote") or [{}])[0] or {}
@@ -294,9 +342,9 @@ def parse_bars(result, now_utc):
             dropped["off_grid"] += 1
             continue
         start = utc_of(ts)
-        local = to_eastern(start)
-        mins = local.hour * 60 + local.minute - OPEN_MIN
-        if mins < 0 or mins >= SESSION_BARS * 5:
+        local = to_loc(start)
+        mins = local.hour * 60 + local.minute - open_min
+        if mins < 0 or mins >= session_bars * 5:
             dropped["outside_hours"] += 1
             continue
         if start + datetime.timedelta(seconds=INTERVAL) > as_of:
@@ -315,16 +363,18 @@ def split_sessions(bars):
     return days
 
 
-def full_sessions(days, before):
-    """Full sessions (all 78 bars) strictly before the plan's date, oldest first,
+def full_sessions(days, before, market="US"):
+    """Full sessions strictly before the plan's date, oldest first,
     and the short ones that were left out (half days, gaps)."""
+    is_in = (market or "US").upper() in ("IN", "INDIA", "NSE", "BSE")
+    session_bars = INDIA_SESSION_BARS if is_in else SESSION_BARS
     full, short = [], []
     for d in sorted(days):
         if d >= before:
             continue
         s = days[d]
-        if len(s) == SESSION_BARS:
-            full.append((d, [s[i] for i in range(SESSION_BARS)]))
+        if len(s) == session_bars:
+            full.append((d, [s[i] for i in range(session_bars)]))
         else:
             short.append({"date": d, "bars": len(s)})
     return full, short
@@ -332,11 +382,13 @@ def full_sessions(days, before):
 
 # ---------------------------------------------------------------- the simulation (sim.py)
 
-def build_pool(sessions):
+def build_pool(sessions, market="US"):
     """pool[i] = every past session's bar i as (o, h, l, c) / bar i-1's close, in date order."""
-    pool = [[] for _ in range(SESSION_BARS)]
+    is_in = (market or "US").upper() in ("IN", "INDIA", "NSE", "BSE")
+    session_bars = INDIA_SESSION_BARS if is_in else SESSION_BARS
+    pool = [[] for _ in range(session_bars)]
     for _, D in sessions:
-        for i in range(1, SESSION_BARS):
+        for i in range(1, session_bars):
             pc = D[i - 1]["c"]
             pool[i].append((D[i]["o"] / pc, D[i]["h"] / pc, D[i]["l"] / pc, D[i]["c"] / pc))
     return pool
@@ -346,14 +398,16 @@ def pct(a, q):
     return a[min(len(a) - 1, int(q * len(a)))]
 
 
-def simulate(pool, entry, stop, target, k, last, replays=10000, seed=19, window=2, side="buy"):
+def simulate(pool, entry, stop, target, k, last, replays=10000, seed=19, window=2, side="buy", market="US"):
     """Monte Carlo replays of bars k+1..last. Same draws and order as the reel's sim.py."""
+    is_in = (market or "US").upper() in ("IN", "INDIA", "NSE", "BSE")
+    session_bars = INDIA_SESSION_BARS if is_in else SESSION_BARS
     long = side == "buy"
     risk = (entry - stop) if long else (stop - entry)
     r_target = round(((target - entry) if long else (entry - target)) / risk, 4)
 
     def slot(rng, i):
-        return i if window == 0 else min(SESSION_BARS - 1, max(1, i + rng.randint(-window, window)))
+        return i if window == 0 else min(session_bars - 1, max(1, i + rng.randint(-window, window)))
 
     rng = random.Random(seed)
     choice = rng.choice
@@ -448,10 +502,12 @@ def rule_stop(rule, oh, ol, entry, long):
     return cents_away(entry * (1 - frac) if long else entry * (1 + frac), long)
 
 
-def history_replay(sessions, rule, last, side="buy"):
+def history_replay(sessions, rule, last, side="buy", market="US"):
     """The plan's rule on every past full session: entry = the first bar after the
     opening range to close beyond it (up to the --until bar), then stop first, then
     target, bar by bar, else the close at --until."""
+    is_in = (market or "US").upper() in ("IN", "INDIA", "NSE", "BSE")
+    open_min = INDIA_OPEN_MIN if is_in else OPEN_MIN
     long = side == "buy"
     n = rule["or_minutes"] // 5
     trades = []
@@ -477,7 +533,7 @@ def history_replay(sessions, rule, last, side="buy"):
         cl = D[last]["c"]
         R = ((t - e) if long else (e - t)) / risk if oc == "target" else -1.0 if oc == "stop" else \
             ((cl - e) if long else (e - cl)) / risk
-        trades.append({"date": d, "time": clock12(OPEN_MIN + 5 * (kk + 1)), "entry": e, "stop": s, "target": t,
+        trades.append({"date": d, "time": clock12(open_min + 5 * (kk + 1)), "entry": e, "stop": s, "target": t,
                        "outcome": oc or "close", "R": round(R, 2)})
     return {
         "sessions": len(sessions), "triggered": len(trades),
@@ -504,14 +560,17 @@ def _num(v, what):
 
 def load_plan(a, now_utc):
     """The plan from --plan (trader/plan.json) or from the flags, checked and normalized."""
+    market = getattr(a, "market", "US") or "US"
+    is_in = market.upper() in ("IN", "INDIA", "NSE", "BSE")
+    today_str = (to_ist(now_utc) if is_in else to_eastern(now_utc)).date().isoformat()
     if a.symbol:
         missing = [f for f in ("entry", "stop", "target", "entry_time") if getattr(a, f) is None]
         if missing:
             raise TMError("with --symbol also give %s" % ", ".join("--" + m.replace("_", "-") for m in missing))
-        raw = {"symbol": a.symbol, "side": a.side, "date": a.date or to_eastern(now_utc).date().isoformat(),
+        raw = {"symbol": a.symbol, "side": a.side, "date": a.date or today_str,
                "entry": a.entry, "stop": a.stop, "target": a.target, "entry_time": a.entry_time,
                "setup": a.setup, "opening_range": {"minutes": a.or_minutes}, "stop_rule": a.stop_rule,
-               "interval": "5m"}
+               "interval": "5m", "market": market}
         src = "flags"
     else:
         if not os.path.exists(a.plan):
@@ -524,15 +583,25 @@ def load_plan(a, now_utc):
             raise TMError("%s is not valid JSON: %s" % (a.plan, e))
         if not isinstance(raw, dict):
             raise TMError("%s is not a plan" % a.plan)
+        if getattr(a, "market", None) and a.market != "US":
+            raw["market"] = a.market
         src = a.plan
-    return normalize_plan(raw, src)
+    return normalize_plan(raw, src, market=market)
 
 
-def normalize_plan(raw, src="flags"):
+def normalize_plan(raw, src="flags", market=None):
     """A plan dict (trader/plan.json shape) -> the checked plan the time machine runs."""
     sym = str(raw.get("symbol") or "").strip().upper()
-    if not re.match(r"^[A-Z][A-Z0-9.\-]{0,9}$", sym):
+    if not re.match(r"^[A-Z0-9&][A-Z0-9.\-&]{0,19}$", sym):
         raise TMError("the plan needs a ticker symbol, got %r" % raw.get("symbol"))
+    if sym.endswith(".NS") or sym.endswith(".BO") or raw.get("market") in ("IN", "INDIA", "NSE", "BSE"):
+        mkt = "IN"
+    else:
+        mkt = market or raw.get("market") or "US"
+    is_in = mkt.upper() in ("IN", "INDIA", "NSE", "BSE")
+    open_min = INDIA_OPEN_MIN if is_in else OPEN_MIN
+    session_bars = INDIA_SESSION_BARS if is_in else SESSION_BARS
+
     side = str(raw.get("side") or "buy").lower()
     if side not in ("buy", "sell"):
         raise TMError("side must be buy or sell, got %r" % raw.get("side"))
@@ -553,10 +622,10 @@ def normalize_plan(raw, src="flags"):
     k = None
     if raw.get("entry_time"):
         close_min = parse_clock(raw["entry_time"], "entry_time")
-        if (close_min - OPEN_MIN) % 5:
+        if (close_min - open_min) % 5:
             raise TMError("entry_time %s is not on the 5-minute grid (use the bar's close, e.g. 10:15 AM)"
                           % raw["entry_time"])
-        k = (close_min - OPEN_MIN) // 5 - 1
+        k = (close_min - open_min) // 5 - 1
     if raw.get("entry_bar") is not None:
         try:
             kb = int(raw["entry_bar"])
@@ -568,9 +637,11 @@ def normalize_plan(raw, src="flags"):
         k = kb
     if k is None:
         raise TMError("the plan needs entry_time (the entry bar's close, e.g. 10:15 AM) or entry_bar")
-    if not 0 <= k <= SESSION_BARS - 2:
-        raise TMError("the entry must close between 9:35 AM and 3:55 PM to leave bars to replay "
-                      "(got %s)" % clock12(OPEN_MIN + 5 * (k + 1)))
+    if not 0 <= k <= session_bars - 2:
+        start_str = clock12(open_min + 5)
+        end_str = clock12(open_min + 5 * (session_bars - 1))
+        raise TMError("the entry must close between %s and %s to leave bars to replay "
+                      "(got %s)" % (start_str, end_str, clock12(open_min + 5 * (k + 1))))
     orng = raw.get("opening_range") or {}
     or_min = orng.get("minutes", 15) if isinstance(orng, dict) else 15
     try:
@@ -580,15 +651,19 @@ def normalize_plan(raw, src="flags"):
     if or_min < 5 or or_min % 5 or or_min >= 390:
         raise TMError("opening_range.minutes must be a multiple of 5 (got %s)" % or_min)
     risk = (entry - stop) if long else (stop - entry)
-    return {
+    res = {
         "symbol": sym, "side": side, "date": date, "setup": str(raw.get("setup") or "orb"),
-        "entry": entry, "entry_time": clock12(OPEN_MIN + 5 * (k + 1)), "entry_bar": k,
+        "entry": entry, "entry_time": clock12(open_min + 5 * (k + 1)), "entry_bar": k,
         "stop": stop, "target": target, "risk_per_share": round(risk, 2),
         "target_r": round(((target - entry) if long else (entry - target)) / risk, 2),
         "opening_range": dict(orng, minutes=or_min) if isinstance(orng, dict) else {"minutes": or_min},
         "stop_rule": str(raw.get("stop_rule") or "auto"), "interval": "5m",
         "flat_by": raw.get("flat_by"), "from": src,
     }
+    if is_in:
+        res["market"] = "IN"
+        res["currency"] = "INR"
+    return res
 
 
 def resolve_rule(plan, entry_day):
@@ -676,15 +751,20 @@ def verdict_notes(mc):
     return notes
 
 
-def time_machine(text, plan, now_utc, replays=10000, seed=19, window=2, until=None, source="yahoo"):
+def time_machine(text, plan, now_utc, replays=10000, seed=19, window=2, until=None, source="yahoo", market="US"):
     """Chart JSON text + a normalized plan -> the timemachine.json document."""
     if not 1 <= replays <= 1000000:
         raise TMError("--replays must be between 1 and 1,000,000")
     if not 0 <= window <= 10:
         raise TMError("--window must be between 0 and 10 bars")
     sym = plan["symbol"]
+    mkt = plan.get("market") or market or ("IN" if sym.endswith((".NS", ".BO")) else "US")
+    is_in = mkt.upper() in ("IN", "INDIA", "NSE", "BSE")
+    open_min = INDIA_OPEN_MIN if is_in else OPEN_MIN
+    close_min = INDIA_CLOSE_MIN if is_in else CLOSE_MIN
+
     result = chart_result(text, sym)
-    meta, bars, dropped = parse_bars(result, now_utc)
+    meta, bars, dropped = parse_bars(result, now_utc, market=mkt)
     msym = str(meta.get("symbol") or "").upper()
     if msym and msym != sym.replace(".", "-"):
         raise TMError("the data is for %s but the plan is for %s" % (msym, sym))
@@ -694,13 +774,13 @@ def time_machine(text, plan, now_utc, replays=10000, seed=19, window=2, until=No
     if not bars:
         raise TMError("no complete 5-minute bars for %s in the data" % sym)
     k = plan["entry_bar"]
-    early = plan["date"] in NYSE_EARLY_CLOSE
-    end_min = EARLY_MIN if early else CLOSE_MIN
+    early = (not is_in) and (plan["date"] in NYSE_EARLY_CLOSE)
+    end_min = EARLY_MIN if early else close_min
     until_min = end_min if until is None else parse_clock(until, "--until")
-    if (until_min - OPEN_MIN) % 5 or until_min > end_min:
+    if (until_min - open_min) % 5 or until_min > end_min:
         raise TMError("--until must be on the 5-minute grid and no later than %s%s"
                       % (clock12(end_min), " (an early close)" if early else ""))
-    last = (until_min - OPEN_MIN) // 5 - 1
+    last = (until_min - open_min) // 5 - 1
     if last <= k:
         raise TMError("--until %s leaves nothing to replay after the %s entry" % (clock12(until_min),
                                                                              plan["entry_time"]))
@@ -710,37 +790,38 @@ def time_machine(text, plan, now_utc, replays=10000, seed=19, window=2, until=No
         reason = ("no bars for that day" if not entry_day else
                   "the data stops at the %s bar" % entry_day[max(entry_day)]["start"])
         raise TMError("the entry is not in the data: no complete %s bar (closing %s) on %s for %s (%s)"
-                      % (clock24(OPEN_MIN + 5 * k), plan["entry_time"], plan["date"], sym, reason))
+                      % (clock24(open_min + 5 * k), plan["entry_time"], plan["date"], sym, reason))
     eb = entry_day[k]
     warn = []
     if not eb["l"] - 0.01 <= plan["entry"] <= eb["h"] + 0.01:
         warn.append("the plan's entry %.2f is outside that bar's range %.2f to %.2f"
                     % (plan["entry"], eb["l"], eb["h"]))
-    sessions, short = full_sessions(days, plan["date"])
+    sessions, short = full_sessions(days, plan["date"], market=mkt)
     if len(sessions) < MIN_SESSIONS:
         raise TMError("only %d full session(s) of %s before %s in the data; the time machine needs at least %d"
                       % (len(sessions), sym, plan["date"], MIN_SESSIONS))
-    pool = build_pool(sessions)
-    mc = simulate(pool, plan["entry"], plan["stop"], plan["target"], k, last, replays, seed, window, plan["side"])
+    pool = build_pool(sessions, market=mkt)
+    mc = simulate(pool, plan["entry"], plan["stop"], plan["target"], k, last, replays, seed, window, plan["side"], market=mkt)
     mc = dict(mc, until=clock24(until_min), pool_sessions=len(sessions), pool_from=sessions[0][0],
               pool_to=sessions[-1][0],
-              band_times=[clock24(OPEN_MIN + 5 * (j + 1)) for j in range(k, last + 1)])
+              band_times=[clock24(open_min + 5 * (j + 1)) for j in range(k, last + 1)])
     rule = resolve_rule(plan, entry_day)
     plan_out = {kk: v for kk, v in plan.items() if v is not None}
     if rule:
         plan_out["stop_rule"] = rule["stop_rule"]
-        history = history_replay(sessions, rule, last, plan["side"])
+        history = history_replay(sessions, rule, last, plan["side"], market=mkt)
     else:
         history = {"sessions": len(sessions), "triggered": 0, "rule": None, "trades": [],
                    "note": "skipped: the history replay knows the opening-range breakout (orb) only, "
                            "this plan's setup is %r" % plan["setup"]}
     last_bar = bars[-1]
+    tz_label = "IST" if is_in else "ET"
     return {
         "created_by": "trader-timemachine",
         "created_at": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source": source,
         "data": {"symbol": msym or sym, "interval": "5m", "range": "60d",
-                 "last_bar": "%s %s ET" % (last_bar["date"], last_bar["start"]),
+                 "last_bar": "%s %s %s" % (last_bar["date"], last_bar["start"], tz_label),
                  "dropped": dropped, "short_sessions_left_out": short},
         "plan": plan_out,
         "mc": mc,
@@ -868,13 +949,17 @@ def _write(path, doc):
 
 
 def compute(a):
-    now = parse_now(a.now)
+    market = getattr(a, "market", "US") or "US"
+    now = parse_now(a.now, market=market)
     plan = load_plan(a, now)
+    sym = plan["symbol"]
+    if sym.endswith((".NS", ".BO")) or plan.get("market") in ("IN", "INDIA", "NSE", "BSE"):
+        market = "IN"
     if a.offline:
-        text, source = read_offline(a.offline, plan["symbol"]), "offline"
+        text, source = read_offline(a.offline, sym, market=market), "offline"
     else:
-        text, source = fetch_chart(plan["symbol"]), "yahoo"
-    return time_machine(text, plan, now, a.replays, a.seed, a.window, a.until, source)
+        text, source = fetch_chart(sym, market=market), "yahoo"
+    return time_machine(text, plan, now, a.replays, a.seed, a.window, a.until, source, market=market)
 
 
 def cmd_run(a):
@@ -931,6 +1016,8 @@ def main(argv=None):
         p.add_argument("--until", help="end each replay at this time (default 16:00, the close)")
         p.add_argument("--offline", metavar="FILE", help="a saved Yahoo chart JSON (.json or .json.gz), no network")
         p.add_argument("--now", help='pretend it is this time ("2026-10-19 10:15" New York, or ISO with Z)')
+        p.add_argument("--market", default="US", choices=["US", "IN", "NSE", "BSE"],
+                       help="market: US (default) or IN / NSE / BSE for Indian equities")
 
     p = sub.add_parser("run", help="replay the plan: 10,000 simulated sessions plus the history")
     common(p)

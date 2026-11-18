@@ -32,12 +32,13 @@ python3 "${CLAUDE_SKILL_DIR}/entry.py" check TSLA --write          # also save t
 python3 "${CLAUDE_SKILL_DIR}/entry.py" check TSLA --setup level --level 371.20
 python3 "${CLAUDE_SKILL_DIR}/entry.py" check TSLA --interval 1m --min-volume-x 1.5
 python3 "${CLAUDE_SKILL_DIR}/entry.py" watch TSLA --until 15:30    # one line per closed bar, stops on the trigger
+python3 "${CLAUDE_SKILL_DIR}/entry.py" check RELIANCE.NS --market IN # Indian market (09:15 open IST)
 python3 "${CLAUDE_SKILL_DIR}/entry.py" watchlist                   # every hit in trader/watchlist.json
 ```
 
-Other flags: `--or-minutes N` (default 15), `--json`, `--offline FILE` (a
+Other flags: `--market US|IN` (default US), `--or-minutes N` (default 15), `--json`, `--offline FILE` (a
 saved Yahoo chart JSON, `.json` or `.json.gz`, or a folder of
-`<TICKER>.json`), `--now "2026-10-19 10:15"` (New York time) to replay a day.
+`<TICKER>.json`), `--now "2026-10-19 10:15"` (New York or IST time) to replay a day.
 `watch` with `--now` or `--offline` runs on a simulated clock and replays the
 day bar by bar without waiting.
 

@@ -34,6 +34,7 @@ Two yeses from the user, one PASS from the rules. No yes, no order.
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/ticket.py" show                     # every ticket, READY or not
+python3 "${CLAUDE_SKILL_DIR}/ticket.py" show --market IN         # Indian market tickets (INR / ₹)
 python3 "${CLAUDE_SKILL_DIR}/ticket.py" approve --index 1 --reply "yes"
 python3 "${CLAUDE_SKILL_DIR}/ticket.py" result --index 1 --status placed --broker-id ID --filled-qty 8 --filled-price 364.20
 python3 "${CLAUDE_SKILL_DIR}/ticket.py" fill --symbol TSLA --side sell --qty 8 --price 370.04
@@ -41,9 +42,10 @@ python3 "${CLAUDE_SKILL_DIR}/ticket.py" flatten --symbol TSLA --qty 8
 python3 "${CLAUDE_SKILL_DIR}/ticket.py" log
 ```
 
-`ticket.py` never talks to a broker. It renders tickets, checks that a reply
-is a real yes for that order, builds the flatten ticket, and keeps the log in
-`trader/state/broker.json`. `--now "2026-10-19 10:15"` pins the clock (New York time).
+`ticket.py` never talks directly to an unconfirmed broker. It renders tickets
+(supporting US Alpaca and Indian brokers such as Zerodha Kite Connect in paper/live mode),
+checks that a reply is a real yes for that order, builds the flatten ticket, and keeps
+the log in `trader/state/broker.json`. `--now "2026-10-19 10:15"` pins the clock (New York or IST time).
 
 ## What it reads and writes
 

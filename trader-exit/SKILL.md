@@ -31,11 +31,12 @@ python3 "${CLAUDE_SKILL_DIR}/exit.py" plan                          # trader/ent
 python3 "${CLAUDE_SKILL_DIR}/exit.py" plan --stop or-mid --target 1R --write
 python3 "${CLAUDE_SKILL_DIR}/exit.py" plan --stop atr:1.5           # needs the session's bars (Yahoo or --offline)
 python3 "${CLAUDE_SKILL_DIR}/exit.py" plan --symbol TSLA --entry 364.18 --or-high 362.18 --or-low 354.47
+python3 "${CLAUDE_SKILL_DIR}/exit.py" plan --market IN --write      # Indian market (15:25 IST flat by)
 python3 "${CLAUDE_SKILL_DIR}/exit.py" show                          # the current trader/plan.json
 ```
 
-Other flags: `--flat-by 15:55`, `--json`, `--now "2026-10-19 10:15"` (New
-York time), `--entry PRICE` with a waiting entry.json to plan ahead, `--setup
+Other flags: `--market US|IN` (default US), `--flat-by 15:55` (15:25 for IN), `--json`, `--now "2026-10-19 10:15"` (New
+York or IST time), `--entry PRICE` with a waiting entry.json to plan ahead, `--setup
 level`, `--offline FILE` (a saved Yahoo chart JSON for an ATR stop).
 
 ## What it reads and writes

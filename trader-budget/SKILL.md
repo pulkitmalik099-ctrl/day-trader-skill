@@ -31,11 +31,16 @@ python3 "${CLAUDE_SKILL_DIR}/size.py"                        # trader/plan.json 
 python3 "${CLAUDE_SKILL_DIR}/size.py" --write                # write trader/orders.json
 python3 "${CLAUDE_SKILL_DIR}/size.py" --limit --write        # a limit order at the plan's entry
 python3 "${CLAUDE_SKILL_DIR}/size.py" --limit 364.00 --json  # a limit order at 364.00
+python3 "${CLAUDE_SKILL_DIR}/size.py" --market IN --write    # Indian market (INR / ₹)
 python3 "${CLAUDE_SKILL_DIR}/size.py" --weights AAPL=40,KO=60 --config split.json   # weights mode, below
 ```
 
-`--now "2026-10-19 10:15"` pins the clock (New York time). A plan for
+`--now "2026-10-19 10:15"` pins the clock (New York or IST time). A plan for
 another day is refused: make a new one with trader-exit.
+
+For Indian trading accounts in INR, copy `config.example.india.json` to
+`trader/config.json` (defines `max_loss_per_trade_inr`, `max_daily_loss_inr`,
+`max_order_inr`, and `min_order_inr`).
 
 ## What it reads and writes
 
