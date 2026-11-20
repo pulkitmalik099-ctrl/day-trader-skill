@@ -373,6 +373,14 @@ def full_sessions(days, before, market="US"):
         if d >= before:
             continue
         s = days[d]
+        if is_in and len(s) < session_bars and s and not any(i not in s for i in range(session_bars - 4)):
+            # Yahoo's NSE feed often has no price for the last few closing bars:
+            # fill them flat at the last real close so the session still counts.
+            s = dict(s)
+            for i in range(session_bars - 4, session_bars):
+                if i not in s:
+                    prev = s[i - 1]["c"]
+                    s[i] = {"date": d, "slot": i, "start": "", "o": prev, "h": prev, "l": prev, "c": prev, "v": 0}
         if len(s) == session_bars:
             full.append((d, [s[i] for i in range(session_bars)]))
         else:
@@ -766,7 +774,7 @@ def time_machine(text, plan, now_utc, replays=10000, seed=19, window=2, until=No
     result = chart_result(text, sym)
     meta, bars, dropped = parse_bars(result, now_utc, market=mkt)
     msym = str(meta.get("symbol") or "").upper()
-    if msym and msym != sym.replace(".", "-"):
+    if msym and msym not in (sym.upper(), sym.replace(".", "-").upper()):
         raise TMError("the data is for %s but the plan is for %s" % (msym, sym))
     gran = meta.get("dataGranularity")
     if gran and gran != "5m":

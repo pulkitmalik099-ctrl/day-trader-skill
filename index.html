@@ -551,6 +551,15 @@
         padding: 20px;
       }
     }
+  
+    .run-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 18px}
+    .run-btn{background:#16a34a;color:#fff;border:0;padding:9px 18px;border-radius:7px;font-weight:700;cursor:pointer;font-size:14px}
+    .run-btn:hover{background:#15803d}.run-btn:disabled{background:#475569;cursor:wait}
+    .run-btn.big{background:#2563eb;font-size:16px;padding:12px 26px}.run-btn.big:hover{background:#1d4ed8}
+    .run-out{display:none;background:#020617;border:1px solid var(--border);border-radius:8px;padding:14px;margin:0 0 18px;max-height:420px;overflow:auto;white-space:pre-wrap;font:12.5px Consolas,monospace;color:#e2e8f0}
+    .run-out.err{border-color:#dc2626}
+    .run-inputs input{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 10px;font-size:14px;width:150px}
+    .run-inputs label{font-size:12px;color:var(--text-muted);margin-right:6px}
   </style>
 </head>
 <body>
@@ -676,6 +685,19 @@
         <span class="pipeline-arrow">➔</span>
         <a href="#trader-broker" class="pipeline-step">8. Execution</a>
       </div>
+    </section>
+
+    <section id="control-panel" class="calc-card">
+      <h2 style="font-size: 18px; margin-bottom: 8px;">Control Panel</h2>
+      <div class="run-bar run-inputs">
+        <span><label for="run-symbol">Symbol</label><input id="run-symbol" value="RELIANCE.NS"></span>
+        <span style="font-size:12px;color:var(--text-muted)">Entry / stop come from the calculator below.</span>
+      </div>
+      <div class="run-bar">
+        <button class="run-btn big" onclick="runStep('all', this, 'out-all')">&#9654; Run Full Pipeline</button>
+        <button class="run-btn" onclick="runStep('tests', this, 'out-all')">Run Self-Tests</button>
+      </div>
+      <pre class="run-out" id="out-all"></pre>
     </section>
 
     <!-- Interactive Position Sizer -->
@@ -1206,6 +1228,74 @@ python trader-pelosi/ptr.py index --member pelosi`;
       const text = document.getElementById(id).innerText;
       copyText(text);
     }
+
+
+    const STEP_MAP = {
+      "trader-scanner": [["Run Scanner","scanner"]],
+      "trader-news": [["Fetch News","news"]],
+      "trader-entry": [["Check Entry","entry"]],
+      "trader-exit": [["Plan Exit","exit"]],
+      "trader-timemachine": [["Run Simulation","timemachine"]],
+      "trader-budget": [["Size Position","budget"]],
+      "trader-risk": [["Check Risk","risk"]],
+      "trader-broker": [["Show Order Ticket","broker"]],
+      "trader-alerts": [["Show Clock","alerts"]],
+      "trader-pelosi": [["Insider Trades","insider"],["Bulk Deals","deals"]]
+    };
+
+    async function runStep(step, btn, outId) {
+      const out = document.getElementById(outId);
+      const entry = parseFloat(document.getElementById("calc-entry").value) || 0;
+      const stop = parseFloat(document.getElementById("calc-stop").value) || 0;
+      const target = entry + 2 * (entry - stop);
+      const q = new URLSearchParams({
+        step, market: currentMarket,
+        symbol: document.getElementById("run-symbol").value.trim(),
+        entry: entry, stop: stop, target: target.toFixed(2)
+      });
+      const label = btn.innerText;
+      btn.disabled = true; btn.innerText = "Running...";
+      out.style.display = "block"; out.classList.remove("err"); out.innerText = "Running " + step + " ...";
+      try {
+        const r = await fetch("/api/run?" + q);
+        const d = await r.json();
+        out.innerText = d.output || "(no output)";
+        if (d.code && /Traceback|Cannot|Invalid/.test(d.output || "")) out.classList.add("err");
+      } catch (e) {
+        out.classList.add("err");
+        out.innerText = "Cannot reach the local server. Start the app with start.bat (do not open index.html directly).";
+      }
+      btn.disabled = false; btn.innerText = label;
+    }
+
+    Object.keys(STEP_MAP).forEach(id => {
+      const sec = document.getElementById(id);
+      if (!sec) return;
+      const box = sec.querySelector(".cmd-box");
+      const outId = "out-" + id;
+      const bar = document.createElement("div");
+      bar.className = "run-bar";
+      STEP_MAP[id].forEach(([label, step]) => {
+        const b = document.createElement("button");
+        b.className = "run-btn"; b.innerText = "▶ " + label;
+        b.onclick = () => runStep(step, b, outId);
+        bar.appendChild(b);
+      });
+      const pre = document.createElement("pre");
+      pre.className = "run-out"; pre.id = outId;
+      box.before(bar, pre);
+      box.style.display = "none";
+      const toggle = document.createElement("button");
+      toggle.className = "copy-btn"; toggle.innerText = "Show command";
+      toggle.onclick = () => { box.style.display = box.style.display === "none" ? "block" : "none"; };
+      bar.appendChild(toggle);
+    });
+
+    const _switchMarket = switchMarket;
+    switchMarket = function(m) {
+      _switchMarket(m);
+      document.getElementById("run-symbol").value = m === "IN" ? "RELIANCE.NS" : "TSLA";
+    };
 
     calculatePosition();
   </script>

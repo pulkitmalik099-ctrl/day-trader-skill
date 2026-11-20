@@ -21,6 +21,14 @@ an order on its own. Paper trading is the default.
 > [github.com/Jakeschincariol/trader-skill](https://github.com/Jakeschincariol/trader-skill).
 > This repo is its day-trading sequel: the Trader skill v2.
 
+## Quick start (one click)
+
+Double-click **`start.bat`** (Windows) or **`start.command`** (macOS/Linux). It
+starts the local hub and opens it in your browser at http://localhost:8000.
+Needs Python 3.8+, nothing else. Pick India or US, enter a symbol, then press
+**Run Full Pipeline**, or run each tool from its own card with its **Run**
+button. Results show on the page; nothing is ever sent to a broker.
+
 ## Install
 
 Paste this into Claude:

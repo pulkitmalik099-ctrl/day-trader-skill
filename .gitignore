@@ -2,3 +2,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .DS_Store
+
+# runtime output of the tools
+trader/
+.hub/
