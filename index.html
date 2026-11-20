@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Day Trader Skill Hub - US & Indian Markets (NSE/BSE)</title>
+  <style>
+    :root {
+      --bg-dark: #0a0d14;
+      --bg-card: #121824;
+      --bg-card-hover: #172030;
+      --border: #232d3f;
+      --text-main: #e2e8f0;
+      --text-muted: #8896ab;
+      --accent-blue: #38bdf8;
+      --accent-green: #10b981;
+      --accent-red: #f43f5e;
+      --accent-yellow: #f59e0b;
+      --accent-purple: #a855f7;
+      --code-bg: #06090f;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      display: flex;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Sidebar Navigation */
+    .sidebar {
+      width: 280px;
+      background: #0d121c;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 100;
+      overflow-y: auto;
+    }
+
+    .brand {
+      padding: 24px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: #000;
+      font-size: 18px;
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .nav-group {
+      padding: 16px 12px;
+    }
+
+    .nav-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      padding: 0 12px 8px 12px;
+      font-weight: 600;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+      margin-bottom: 2px;
+    }
+
+    .nav-item:hover, .nav-item.active {
+      background: var(--bg-card);
+      color: var(--accent-blue);
+    }
+
+    .nav-item.active {
+      border-left: 3px solid var(--accent-blue);
+      color: #fff;
+    }
+
+    .badge {
+      margin-left: auto;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent-blue);
+      font-weight: 600;
+    }
+
+    .badge-in {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent-green);
+    }
+
+    /* Main Content Area */
+    .main-content {
+      margin-left: 280px;
+      flex: 1;
+      padding: 32px 40px;
+      max-width: 1350px;
+    }
+
+    /* Header & Market Switcher */
+    .top-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .market-switch-container {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .market-btn-group {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px;
+      display: flex;
+      gap: 4px;
+    }
+
+    .market-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .market-btn.active {
+      background: var(--accent-blue);
+      color: #000;
+    }
+
+    .market-btn.in.active {
+      background: var(--accent-green);
+      color: #000;
+    }
+
+    .clock-display {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-family: monospace;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 8px var(--accent-green);
+    }
+
+    /* Hero / Overview */
+    .hero-banner {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.9));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin-bottom: 36px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-banner::after {
+      content: "";
+      position: absolute;
+      right: -40px;
+      top: -40px;
+      width: 220px;
+      height: 220px;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-title {
+      font-size: 26px;
+      font-weight: 800;
+      margin-bottom: 10px;
+      letter-spacing: -0.5px;
+    }
+
+    .hero-desc {
+      color: var(--text-muted);
+      font-size: 14.5px;
+      line-height: 1.6;
+      max-width: 880px;
+      margin-bottom: 20px;
+    }
+
+    .pipeline-visual {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 12px 0;
+      scrollbar-width: thin;
+    }
+
+    .pipeline-step {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      text-decoration: none;
+      color: var(--text-main);
+      transition: border-color 0.2s, transform 0.15s;
+    }
+
+    .pipeline-step:hover {
+      border-color: var(--accent-blue);
+      transform: translateY(-2px);
+    }
+
+    .pipeline-arrow {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    /* Section Cards */
+    .section-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      margin-bottom: 32px;
+      scroll-margin-top: 24px;
+      transition: border-color 0.2s;
+    }
+
+    .section-card:hover {
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 16px;
+      gap: 16px;
+    }
+
+    .section-title {
+      font-size: 20px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-cmd-tag {
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--accent-blue);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: monospace;
+    }
+
+    .section-desc {
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+
+    /* Terminal Code Blocks */
+    .cmd-box {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 18px;
+      position: relative;
+    }
+
+    .cmd-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .cmd-code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      color: #38bdf8;
+      display: block;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .copy-btn {
+      background: #1e293b;
+      color: #94a3b8;
+      border: 1px solid #334155;
+      padding: 4px 10px;
+      border-radius: 5px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .copy-btn:hover {
+      background: #334155;
+      color: #fff;
+    }
+
+    /* Feature Grid */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .feature-item {
+      background: rgba(10, 13, 20, 0.5);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+
+    .feature-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .feature-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* File Table */
+    .file-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      font-size: 12.5px;
+    }
+
+    .file-table th {
+      text-align: left;
+      padding: 8px 12px;
+      background: #0d121c;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      font-weight: 600;
+    }
+
+    .file-table td {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+    }
+
+    .file-table code {
+      font-family: monospace;
+      color: var(--accent-yellow);
+      background: rgba(245, 158, 11, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    /* Interactive Calculator Section */
+    .calc-card {
+      background: linear-gradient(135deg, #131b2a, #101623);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      margin-bottom: 32px;
+    }
+
+    .calc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+
+    .calc-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .calc-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .calc-input {
+      background: #080c14;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 14px;
+      font-family: monospace;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .calc-input:focus {
+      border-color: var(--accent-blue);
+    }
+
+    .results-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      padding: 18px;
+      background: rgba(6, 9, 15, 0.8);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .result-box {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .result-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .result-value {
+      font-size: 20px;
+      font-weight: 800;
+      font-family: monospace;
+      color: var(--accent-blue);
+    }
+
+    .result-value.profit {
+      color: var(--accent-green);
+    }
+
+    .result-value.loss {
+      color: var(--accent-red);
+    }
+
+    /* Footer */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 24px 0;
+      margin-top: 40px;
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .footer a {
+      color: var(--accent-blue);
+      text-decoration: none;
+    }
+
+    @media (max-width: 900px) {
+      .sidebar {
+        display: none;
+      }
+      .main-content {
+        margin-left: 0;
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">DT</div>
+      <div>
+        <div class="brand-title">Day Trader Hub</div>
+        <div class="brand-subtitle">US & Indian Markets</div>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">Navigation</div>
+      <a href="#overview" class="nav-item active">
+        <span>Overview</span>
+      </a>
+      <a href="#interactive-calc" class="nav-item">
+        <span>Position Sizer</span>
+        <span class="badge badge-in">Tool</span>
+      </a>
+      <a href="#test-runner" class="nav-item">
+        <span>All-In-One Runner</span>
+        <span class="badge">Run</span>
+      </a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">The 11 Day-Trading Skills</div>
+      <a href="#trader-scanner" class="nav-item">
+        <span>1. Chart Scanner</span>
+        <span class="badge badge-in">IN/US</span>
+      </a>
+      <a href="#trader-news" class="nav-item">
+        <span>2. News Monitor</span>
+        <span class="badge badge-in">IN/US</span>
+      </a>
+      <a href="#trader-entry" class="nav-item">
+        <span>3. Entry Timer</span>
+        <span class="badge badge-in">IN/US</span>
+      </a>
+      <a href="#trader-exit" class="nav-item">
+        <span>4. Exit Planner</span>
+        <span class="badge badge-in">IN/US</span>
+      </a>
+      <a href="#trader-timemachine" class="nav-item">
+        <span>5. Time Machine</span>
+        <span class="badge badge-in">IN/US</span>
+      </a>
+      <a href="#trader-budget" class="nav-item">
+        <span>6. Budget Manager</span>
+        <span class="badge badge-in">INR/USD</span>
+      </a>
+      <a href="#trader-risk" class="nav-item">
+        <span>7. Risk Manager</span>
+        <span class="badge badge-in">Circuit</span>
+      </a>
+      <a href="#trader-broker" class="nav-item">
+        <span>8. Order Executor</span>
+        <span class="badge badge-in">Tickets</span>
+      </a>
+      <a href="#trader-alerts" class="nav-item">
+        <span>9. Price Alerts</span>
+        <span class="badge badge-in">Clocks</span>
+      </a>
+      <a href="#trader-analyst" class="nav-item">
+        <span>10. Earnings Analyst</span>
+        <span class="badge">ADR</span>
+      </a>
+      <a href="#trader-pelosi" class="nav-item">
+        <span>11. Insider & Bulk Deals</span>
+        <span class="badge badge-in">SEBI PIT</span>
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main Content View -->
+  <main class="main-content">
+
+    <!-- Top Bar with Market Switcher and Dual Clock -->
+    <header class="top-header">
+      <div class="market-switch-container">
+        <span style="font-size: 13px; font-weight: 600; color: var(--text-muted);">ACTIVE MARKET:</span>
+        <div class="market-btn-group">
+          <button class="market-btn in active" id="btn-india" onclick="switchMarket('IN')">
+            <span>🇮🇳 India (NSE / BSE)</span>
+          </button>
+          <button class="market-btn" id="btn-us" onclick="switchMarket('US')">
+            <span>🇺🇸 US (NYSE / NASDAQ)</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="clock-display" id="clock-box">
+        <div class="status-dot"></div>
+        <span id="market-clock-text">IST: Loading...</span>
+      </div>
+    </header>
+
+    <!-- Overview Section -->
+    <section id="overview" class="hero-banner">
+      <h1 class="hero-title">Day Trader Skill Routing Hub</h1>
+      <p class="hero-desc">
+        Complete multi-market routing interface across all 11 day trading skills. Built with pure Python standard library: zero external dependencies, comprehensive risk controls, and automated session management for both <strong>Indian (NSE/BSE)</strong> and <strong>US (NASDAQ/NYSE)</strong> markets.
+      </p>
+
+      <div class="pipeline-visual">
+        <a href="#trader-scanner" class="pipeline-step">1. Scanner</a>
+        <span class="pipeline-arrow">➔</span>
+        <a href="#trader-news" class="pipeline-step">2. News</a>
+        <span class="pipeline-arrow">➔</span>
+        <a href="#trader-entry" class="pipeline-step">3. Entry</a>
+        <span class="pipeline-arrow">➔</span>
+        <a href="#trader-exit" class="pipeline-step">4. Exit</a>
+        <span class="pipeline-arrow">➔</span>
+        <a href="#trader-timemachine" class="pipeline-step">5. Simulation</a>
+        <span class="pipeline-arrow">➔</span>
+        <a href="#trader-budget" class="pipeline-step">6. Sizing</a>
+        <span class="pipeline-arrow">➔</span>
+        <a href="#trader-risk" class="pipeline-step">7. Risk</a>
+        <span class="pipeline-arrow">➔</span>
+        <a href="#trader-broker" class="pipeline-step">8. Execution</a>
+      </div>
+    </section>
+
+    <!-- Interactive Position Sizer -->
+    <section id="interactive-calc" class="calc-card">
+      <h2 style="font-size: 18px; margin-bottom: 8px;">Interactive Position Sizing & Risk Calculator</h2>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">
+        Simulate your exact position size, risk-per-share, and 2R reward targets dynamically calculated according to your account limits.
+      </p>
+
+      <div class="calc-grid">
+        <div class="calc-field">
+          <label class="calc-label" id="calc-lbl-budget">Account Capital (INR)</label>
+          <input type="number" id="calc-budget" class="calc-input" value="100000" oninput="calculatePosition()">
+        </div>
+        <div class="calc-field">
+          <label class="calc-label" id="calc-lbl-loss">Max Loss per Trade</label>
+          <input type="number" id="calc-loss" class="calc-input" value="1000" oninput="calculatePosition()">
+        </div>
+        <div class="calc-field">
+          <label class="calc-label" id="calc-lbl-entry">Entry Price</label>
+          <input type="number" id="calc-entry" class="calc-input" value="2500" oninput="calculatePosition()">
+        </div>
+        <div class="calc-field">
+          <label class="calc-label" id="calc-lbl-stop">Stop-Loss Price</label>
+          <input type="number" id="calc-stop" class="calc-input" value="2475" oninput="calculatePosition()">
+        </div>
+      </div>
+
+      <div class="results-row">
+        <div class="result-box">
+          <span class="result-label">Risk Per Share</span>
+          <span class="result-value" id="res-risk-share">₹25.00</span>
+        </div>
+        <div class="result-box">
+          <span class="result-label">Position Size</span>
+          <span class="result-value" id="res-qty">30 shares</span>
+        </div>
+        <div class="result-box">
+          <span class="result-label">Capital Required</span>
+          <span class="result-value" id="res-order-val">₹75,000</span>
+        </div>
+        <div class="result-box">
+          <span class="result-label">Target (2.0R)</span>
+          <span class="result-value profit" id="res-target">₹2,550.00</span>
+        </div>
+        <div class="result-box">
+          <span class="result-label">Max Risk at Stop</span>
+          <span class="result-value loss" id="res-max-loss">₹750.00</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- All-In-One Runner Box -->
+    <section id="test-runner" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">⚡ All-In-One Local Test Runner</h2>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Run the entire 321-test suite + complete Indian market trading simulation in one step</div>
+        </div>
+        <span class="section-cmd-tag">tests/run_all.py</span>
+      </div>
+
+      <div class="cmd-box">
+        <div class="cmd-header">
+          <span>Terminal Command</span>
+          <button class="copy-btn" onclick="copyText('python tests/run_all.py')">Copy</button>
+        </div>
+        <code class="cmd-code">python tests/run_all.py</code>
+      </div>
+
+      <div class="feature-grid">
+        <div class="feature-item">
+          <div class="feature-title">Part 1: 321 Unit Tests</div>
+          <div class="feature-desc">Offline verification of all 11 skills, fixtures, and repository invariants with 100% pass guarantee.</div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-title">Part 2: Live Workflow Simulation</div>
+          <div class="feature-desc">Simulates clock check, exit planning, INR sizing, circuit verification, order ticket display, and SEBI disclosures.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 1. Chart Scanner -->
+    <section id="trader-scanner" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">1. Chart Scanner</h2>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Scans thousands of charts for Opening Range Breakouts (ORB) and flags</div>
+        </div>
+        <span class="section-cmd-tag">trader-scanner/scan.py</span>
+      </div>
+      <p class="section-desc">
+        Parses symbol universes, historical bars, and identifies stocks breaking above their opening ranges. Supports NIFTY 500 equities for India and US equities via Nasdaq Trader symbol lists.
+      </p>
+
+      <div class="cmd-box">
+        <div class="cmd-header">
+          <span id="scanner-cmd-lbl">Indian Market (NIFTY 500)</span>
+          <button class="copy-btn" id="scanner-copy-btn" onclick="copyFromElem('scanner-code')">Copy</button>
+        </div>
+        <code class="cmd-code" id="scanner-code"># Fetch universe & scan Indian Opening Range Breakouts
+python trader-scanner/scan.py universe --market IN
+python trader-scanner/scan.py orb --market IN --at 10:15</code>
+      </div>
+
+      <table class="file-table">
+        <tr><th>Reads</th><th>Writes</th></tr>
+        <tr><td><code>EQUITY_L.csv</code> or Nasdaq SymDir</td><td><code>trader/universe.txt</code>, <code>trader/watchlist.json</code></td></tr>
+      </table>
+    </section>
+
+    <!-- 2. News Monitor -->
+    <section id="trader-news" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">2. News Monitor</h2>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Tracks breaking headlines, SEC 8-K filings, and Indian regulatory moves</div>
+        </div>
+        <span class="section-cmd-tag">trader-news/news.py</span>
+      </div>
+      <p class="section-desc">
+        Cross-checks breaking headlines with day move percentages. Automatically tags Indian market context (SEBI, RBI, FII/DII institutional flows, Promoters, NIFTY) and resolves `.NS`/`.BO` tickers.
+      </p>
+
+      <div class="cmd-box">
+        <div class="cmd-header">
+          <span id="news-cmd-lbl">Command</span>
+          <button class="copy-btn" onclick="copyFromElem('news-code')">Copy</button>
+        </div>
+        <code class="cmd-code" id="news-code">python trader-news/news.py --tickers RELIANCE.NS TCS.NS --market IN</code>
+      </div>
+    </section>
+
+    <!-- 3. Entry Timer -->
+    <section id="trader-entry" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">3. Entry Timer</h2>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Watches setup bar-by-bar and confirms entries on closed candles</div>
+        </div>
+        <span class="section-cmd-tag">trader-entry/entry.py</span>
+      </div>
+      <p class="section-desc">
+        Monitors 5-minute and 1-minute bars. Triggers only when a candle CLOSES past the level, preventing intraday false spikes.
+      </p>
+
+      <div class="cmd-box">
+        <div class="cmd-header">
+          <span>Command</span>
+          <button class="copy-btn" onclick="copyFromElem('entry-code')">Copy</button>
+        </div>
+        <code class="cmd-code" id="entry-code">python trader-entry/entry.py check RELIANCE.NS --market IN --write</code>
+      </div>
+
+      <table class="file-table">
+        <tr><th>Session Opening</th><th>Entry Window</th><th>Outputs</th></tr>
+        <tr id="entry-table-row"><td>09:15 IST (India)</td><td>09:30 to 15:15 IST</td><td><code>trader/entry.json</code></td></tr>
+      </table>
+    </section>
+
+    <!-- 4. Exit Planner -->
+    <section id="trader-exit" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">4. Exit Planner</h2>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Pre-determines stop loss, profit target, and mandatory intraday flat-by time</div>
+        </div>
+        <span class="section-cmd-tag">trader-exit/exit.py</span>
+      </div>
+      <p class="section-desc">
+        Enforces discipline: both exit points are set before order entry. Automatically enforces the 15:25 IST (India) or 15:55 ET (US) flat-by rule so no position is held overnight.
+      </p>
+
+      <div class="cmd-box">
+        <div class="cmd-header">
+          <span>Command</span>
+          <button class="copy-btn" onclick="copyFromElem('exit-code')">Copy</button>
+        </div>
+        <code class="cmd-code" id="exit-code">python trader-exit/exit.py plan --market IN --symbol RELIANCE.NS --entry 2500 --stop price:2475 --target price:2550 --write</code>
+      </div>
+    </section>
+
+    <!-- 5. Time Machine -->
+    <section id="trader-timemachine" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">5. Time Machine Replay</h2>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">10,000 Monte Carlo replays plus historical setup evaluations</div>
+        </div>
+        <span class="section-cmd-tag">trader-timemachine/timemachine.py</span>
+      </div>
+      <p class="section-desc">
+        Simulates the remainder of the session using the stock's actual last 60 days of 5-minute candles (75 bars in Indian session, 78 bars in US session) to calculate hit odds before risking any capital.
+      </p>
+
+      <div class="cmd-box">
+        <div class="cmd-header">
+          <span>Command</span>
+          <button class="copy-btn" onclick="copyFromElem('timemachine-code')">Copy</button>
+        </div>
+        <code class="cmd-code" id="timemachine-code">python trader-timemachine/timemachine.py run --market IN --replays 10000 --write</code>
+      </div>
+    </section>
+
+    <!-- 6. Budget Manager -->
+    <section id="trader-budget" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">6. Budget Manager</h2>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Mathematical position sizing capped strictly by your maximum loss rule</div>
+        </div>
+        <span class="section-cmd-tag">trader-budget/size.py</span>
+      </div>
+      <p class="section-desc">
+        Converts the trade plan into an exact share quantity. The stop distance dictates the size: wider stop equals smaller position. Supports INR (`config.example.india.json`) and USD sizing.
+      </p>
+
+      <div class="cmd-box">
+        <div class="cmd-header">
+          <span>Command</span>
+          <button class="copy-btn" onclick="copyFromElem('budget-code')">Copy</button>
+        </div>
+        <code class="cmd-code" id="budget-code">python trader-budget/size.py --market IN --write</code>
+      </div>
+    </section>
+
+    <!-- 7. Risk Manager -->
+    <section id="trader-risk" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">7. Risk Manager</h2>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Independent veto checks: circuit filters, daily loss limits, and entry windows</div>
+        </div>
+        <span class="section-cmd-tag">trader-risk/check.py</span>
+      </div>
+      <p class="section-desc">
+        Strict PASS or BLOCK gatekeeper. In Indian market mode, evaluates exchange circuit bands (5%, 10%, 20%) to ensure orders cannot be trapped in limit halts.
+      </p>
+
+      <div class="cmd-box">
+        <div class="cmd-header">
+          <span>Command</span>
+          <button class="copy-btn" onclick="copyFromElem('risk-code')">Copy</button>
+        </div>
+        <code class="cmd-code" id="risk-code">python trader-risk/check.py --market IN</code>
+      </div>
+    </section>
+
+    <!-- 8. Order Executor -->
+    <section id="trader-broker" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">8. Order Executor</h2>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Plain-English ticket rendering for Zerodha Kite Connect & Alpaca paper trading</div>
+        </div>
+        <span class="section-cmd-tag">trader-broker/ticket.py</span>
+      </div>
+      <p class="section-desc">
+        Nothing goes through without explicit user approval. Renders clean, clear tickets in INR (₹) or USD ($) ready for manual confirmation or API transmission.
+      </p>
+
+      <div class="cmd-box">
+        <div class="cmd-header">
+          <span>Command</span>
+          <button class="copy-btn" onclick="copyFromElem('broker-code')">Copy</button>
+        </div>
+        <code class="cmd-code" id="broker-code">python trader-broker/ticket.py show --market IN</code>
+      </div>
+    </section>
+
+    <!-- 9. Price Alerts -->
+    <section id="trader-alerts" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">9. Price Alerts & Clock</h2>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Market clocks, stop alerts, target rings, and end-of-day flatten bells</div>
+        </div>
+        <span class="section-cmd-tag">trader-alerts/alerts.py</span>
+      </div>
+      <p class="section-desc">
+        Manages NSE/BSE and NYSE market calendars, 2026 trading holidays, and sounds alerts when stops, targets, or close approaching times are reached.
+      </p>
+
+      <div class="cmd-box">
+        <div class="cmd-header">
+          <span>Command</span>
+          <button class="copy-btn" onclick="copyFromElem('alerts-code')">Copy</button>
+        </div>
+        <code class="cmd-code" id="alerts-code">python trader-alerts/alerts.py clock --market IN
+python trader-alerts/alerts.py add --from-plan</code>
+      </div>
+    </section>
+
+    <!-- 10. Earnings Analyst -->
+    <section id="trader-analyst" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">10. Earnings Analyst</h2>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Quarterly financial facts, margin trends, and cross-listed ADR mapping</div>
+        </div>
+        <span class="section-cmd-tag">trader-analyst/facts.py</span>
+      </div>
+      <p class="section-desc">
+        Extracts verified XBRL facts and cross-references Indian dual-listed ADRs (e.g. INFY.NS to INFY, HDFCBANK.NS to HDB) to extract audited quarterly statements.
+      </p>
+
+      <div class="cmd-box">
+        <div class="cmd-header">
+          <span>Command</span>
+          <button class="copy-btn" onclick="copyFromElem('analyst-code')">Copy</button>
+        </div>
+        <code class="cmd-code" id="analyst-code">python trader-analyst/facts.py INFY.NS</code>
+      </div>
+    </section>
+
+    <!-- 11. Insider & Bulk Deals -->
+    <section id="trader-pelosi" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">11. Insider & Bulk Deals Tracker</h2>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">SEBI PIT Reg 7(2) insider trades, NSE/BSE bulk deals, and Congressional PTRs</div>
+        </div>
+        <span class="section-cmd-tag">trader-pelosi/insider.py</span>
+      </div>
+      <p class="section-desc">
+        Tracks institutional and promoter activities. For India: monitors SEBI Prohibition of Insider Trading disclosures and exchange bulk/block deals. For US: monitors Congressional PTRs.
+      </p>
+
+      <div class="cmd-box">
+        <div class="cmd-header">
+          <span>Command</span>
+          <button class="copy-btn" onclick="copyFromElem('insider-code')">Copy</button>
+        </div>
+        <code class="cmd-code" id="insider-code"># Track Indian Promoter & Insider Trading (SEBI PIT)
+python trader-pelosi/insider.py pit --promoter-only
+
+# Track NSE / BSE Bulk & Block Deals
+python trader-pelosi/insider.py deals</code>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div>Day Trader Skill Hub &bull; Pure Standard Python 3.8+</div>
+      <div>Repository: <a href="https://github.com/pulkitmalik099-ctrl/day-trader-skill" target="_blank">github.com/pulkitmalik099-ctrl/day-trader-skill</a></div>
+    </footer>
+
+  </main>
+
+  <script>
+    let currentMarket = "IN";
+
+    function updateClocks() {
+      const now = new Date();
+      
+      // IST time: UTC + 5:30
+      const istOptions = { timeZone: "Asia/Kolkata", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit", weekday: "short" };
+      const istStr = now.toLocaleTimeString("en-GB", istOptions);
+      
+      // ET time: America/New_York
+      const etOptions = { timeZone: "America/New_York", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit", weekday: "short" };
+      const etStr = now.toLocaleTimeString("en-GB", etOptions);
+
+      const clockElem = document.getElementById("market-clock-text");
+      if (currentMarket === "IN") {
+        clockElem.innerText = "IST (Mumbai): " + istStr + " | NSE: 09:15 - 15:30";
+      } else {
+        clockElem.innerText = "ET (New York): " + etStr + " | NYSE: 09:30 - 16:00";
+      }
+    }
+    setInterval(updateClocks, 1000);
+    updateClocks();
+
+    function switchMarket(m) {
+      currentMarket = m;
+      const btnIn = document.getElementById("btn-india");
+      const btnUs = document.getElementById("btn-us");
+      
+      if (m === "IN") {
+        btnIn.classList.add("active");
+        btnUs.classList.remove("active");
+        
+        // Update Calculator labels & values
+        document.getElementById("calc-lbl-budget").innerText = "Account Capital (INR)";
+        document.getElementById("calc-budget").value = "100000";
+        document.getElementById("calc-loss").value = "1000";
+        document.getElementById("calc-entry").value = "2500";
+        document.getElementById("calc-stop").value = "2475";
+
+        // Update Code blocks
+        document.getElementById("scanner-code").innerText = 
+`python trader-scanner/scan.py universe --market IN
+python trader-scanner/scan.py orb --market IN --at 10:15`;
+
+        document.getElementById("news-code").innerText = 
+`python trader-news/news.py --tickers RELIANCE.NS TCS.NS --market IN`;
+
+        document.getElementById("entry-code").innerText = 
+`python trader-entry/entry.py check RELIANCE.NS --market IN --write`;
+
+        document.getElementById("entry-table-row").innerHTML = 
+`<td>09:15 IST (India)</td><td>09:30 to 15:15 IST</td><td><code>trader/entry.json</code></td>`;
+
+        document.getElementById("exit-code").innerText = 
+`python trader-exit/exit.py plan --market IN --symbol RELIANCE.NS --entry 2500 --stop price:2475 --target price:2550 --write`;
+
+        document.getElementById("timemachine-code").innerText = 
+`python trader-timemachine/timemachine.py run --market IN --replays 10000 --write`;
+
+        document.getElementById("budget-code").innerText = 
+`python trader-budget/size.py --market IN --write`;
+
+        document.getElementById("risk-code").innerText = 
+`python trader-risk/check.py --market IN`;
+
+        document.getElementById("broker-code").innerText = 
+`python trader-broker/ticket.py show --market IN`;
+
+        document.getElementById("alerts-code").innerText = 
+`python trader-alerts/alerts.py clock --market IN
+python trader-alerts/alerts.py add --from-plan`;
+
+        document.getElementById("insider-code").innerText = 
+`# Track Indian Promoter & Insider Trading (SEBI PIT)
+python trader-pelosi/insider.py pit --promoter-only
+
+# Track NSE / BSE Bulk & Block Deals
+python trader-pelosi/insider.py deals`;
+
+      } else {
+        btnUs.classList.add("active");
+        btnIn.classList.remove("active");
+        
+        // Update Calculator labels & values
+        document.getElementById("calc-lbl-budget").innerText = "Account Capital (USD)";
+        document.getElementById("calc-budget").value = "5000";
+        document.getElementById("calc-loss").value = "50";
+        document.getElementById("calc-entry").value = "364.18";
+        document.getElementById("calc-stop").value = "358.32";
+
+        // Update Code blocks for US
+        document.getElementById("scanner-code").innerText = 
+`python trader-scanner/scan.py universe
+python trader-scanner/scan.py orb --at 10:15`;
+
+        document.getElementById("news-code").innerText = 
+`python trader-news/news.py --tickers TSLA NVDA --hours 12`;
+
+        document.getElementById("entry-code").innerText = 
+`python trader-entry/entry.py check TSLA --write`;
+
+        document.getElementById("entry-table-row").innerHTML = 
+`<td>09:30 ET (US)</td><td>09:45 to 15:30 ET</td><td><code>trader/entry.json</code></td>`;
+
+        document.getElementById("exit-code").innerText = 
+`python trader-exit/exit.py plan --symbol TSLA --entry 364.18 --stop price:358.32 --target price:370.04 --write`;
+
+        document.getElementById("timemachine-code").innerText = 
+`python trader-timemachine/timemachine.py run --write`;
+
+        document.getElementById("budget-code").innerText = 
+`python trader-budget/size.py --write`;
+
+        document.getElementById("risk-code").innerText = 
+`python trader-risk/check.py`;
+
+        document.getElementById("broker-code").innerText = 
+`python trader-broker/ticket.py show`;
+
+        document.getElementById("alerts-code").innerText = 
+`python trader-alerts/alerts.py clock
+python trader-alerts/alerts.py add --from-plan`;
+
+        document.getElementById("insider-code").innerText = 
+`# Track US Congressional Stock Disclosures (STOCK Act)
+python trader-pelosi/ptr.py index --member pelosi`;
+      }
+
+      calculatePosition();
+      updateClocks();
+    }
+
+    function calculatePosition() {
+      const budget = parseFloat(document.getElementById("calc-budget").value) || 0;
+      const maxLoss = parseFloat(document.getElementById("calc-loss").value) || 0;
+      const entry = parseFloat(document.getElementById("calc-entry").value) || 0;
+      const stop = parseFloat(document.getElementById("calc-stop").value) || 0;
+      const sym = currentMarket === "IN" ? "₹" : "$";
+
+      if (entry <= stop || entry <= 0 || maxLoss <= 0) {
+        document.getElementById("res-risk-share").innerText = sym + "0.00";
+        document.getElementById("res-qty").innerText = "0 shares";
+        document.getElementById("res-order-val").innerText = sym + "0";
+        document.getElementById("res-target").innerText = sym + "0.00";
+        document.getElementById("res-max-loss").innerText = sym + "0.00";
+        return;
+      }
+
+      const riskPerShare = entry - stop;
+      const target2R = entry + (riskPerShare * 2);
+
+      // Max shares by loss
+      const sharesByLoss = Math.floor(maxLoss / riskPerShare);
+      
+      // Position cap (75% of budget)
+      const maxCap = budget * 0.75;
+      const sharesByCap = Math.floor(maxCap / entry);
+
+      // Final shares
+      const finalShares = Math.max(0, Math.min(sharesByLoss, sharesByCap));
+      const orderValue = finalShares * entry;
+      const actualLoss = finalShares * riskPerShare;
+
+      document.getElementById("res-risk-share").innerText = sym + riskPerShare.toFixed(2);
+      document.getElementById("res-qty").innerText = finalShares + " shares";
+      document.getElementById("res-order-val").innerText = sym + orderValue.toLocaleString("en-IN", {maximumFractionDigits: 0});
+      document.getElementById("res-target").innerText = sym + target2R.toFixed(2);
+      document.getElementById("res-max-loss").innerText = sym + actualLoss.toFixed(2);
+    }
+
+    function copyText(str) {
+      navigator.clipboard.writeText(str).then(() => {
+        alert("Command copied to clipboard:\n" + str);
+      });
+    }
+
+    function copyFromElem(id) {
+      const text = document.getElementById(id).innerText;
+      copyText(text);
+    }
+
+    calculatePosition();
+  </script>
+</body>
+</html>
